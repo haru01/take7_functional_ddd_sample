@@ -1,0 +1,23 @@
+{
+  "name": "functional-ddd-enrollment",
+  "version": "1.0.0",
+  "description": "履修管理システム - Functional DDD with Event Sourcing",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:watch": "vitest",
+    "coverage": "vitest --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/ui": "^1.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0",
+    "zod": "^3.22.0"
+  },
+  "dependencies": {
+    "zod": "^3.22.0"
+  }
+}
