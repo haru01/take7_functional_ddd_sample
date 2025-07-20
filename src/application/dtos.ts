@@ -182,6 +182,69 @@ export const extractDomainInputs = (command: RequestEnrollmentCommand) => ({
   }
 });
 
+import { StudentIdSchema, CourseIdSchema, SemesterSchema } from '../domain/types.js';
+import { Result, Ok, Err } from '../domain/types.js';
+
+/**
+ * 型安全な識別子変換ヘルパー関数
+ * as any キャストを避けるための安全な変換
+ */
+export const parseIdentifiers = (input: {
+  studentId: string;
+  courseId: string;
+  semester: string;
+}): Result<{
+  studentId: StudentId;
+  courseId: CourseId;
+  semester: Semester;
+}, EnrollmentError> => {
+  // 並列バリデーション
+  const studentIdResult = StudentIdSchema.safeParse(input.studentId);
+  const courseIdResult = CourseIdSchema.safeParse(input.courseId);
+  const semesterResult = SemesterSchema.safeParse(input.semester);
+
+  // エラーハンドリング
+  if (!studentIdResult.success) {
+    return Err({
+      type: 'ValidationError' as const,
+      message: `Invalid student ID format: ${input.studentId}`,
+      code: 'INVALID_STUDENT_ID',
+      timestamp: new Date(),
+      field: 'studentId',
+      value: input.studentId
+    });
+  }
+
+  if (!courseIdResult.success) {
+    return Err({
+      type: 'ValidationError' as const,
+      message: `Invalid course ID format: ${input.courseId}`,
+      code: 'INVALID_COURSE_ID',
+      timestamp: new Date(),
+      field: 'courseId',
+      value: input.courseId
+    });
+  }
+
+  if (!semesterResult.success) {
+    return Err({
+      type: 'ValidationError' as const,
+      message: `Invalid semester format: ${input.semester}`,
+      code: 'INVALID_SEMESTER',
+      timestamp: new Date(),
+      field: 'semester',
+      value: input.semester
+    });
+  }
+
+  // 成功ケース
+  return Ok({
+    studentId: studentIdResult.data,
+    courseId: courseIdResult.data,
+    semester: semesterResult.data
+  });
+};
+
 /**
  * DTO設計の重要な判断
  * 

@@ -514,7 +514,7 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
 ```typescript
 // __tests__/domain/enrollment.test.ts
 import { describe, test, expect } from 'vitest';
-import { requestEnrollment } from '../../src/domain/enrollment.js';
+import { requestEnrollment } from '../../src/domain/enrollment-aggregate.js';
 
 describe('履修申請ドメインロジック', () => {
   test('正常な履修申請を作成できる', () => {

@@ -22,7 +22,8 @@ import {
   RequestEnrollmentCommandSchema,
   mapEnrollmentToResponse,
   mapErrorToResponse,
-  extractDomainInputs
+  extractDomainInputs,
+  parseIdentifiers
 } from './dtos.js';
 
 /**
@@ -140,10 +141,18 @@ export class EnrollmentApplicationService {
     courseId: string,
     semester: string
   ): Promise<Result<EnrollmentResponse | null, ErrorResponse>> {
+    // 型安全な変換を行う
+    const identifiersResult = parseIdentifiers({ studentId, courseId, semester });
+    if (!identifiersResult.success) {
+      return Err(mapErrorToResponse(identifiersResult.error));
+    }
+
+    const { studentId: validStudentId, courseId: validCourseId, semester: validSemester } = identifiersResult.data;
+
     const enrollmentResult = await this.enrollmentRepository.findByStudentCourseAndSemester(
-      studentId as any, // TODO: 型変換の改善
-      courseId as any,
-      semester as any
+      validStudentId,
+      validCourseId,
+      validSemester
     );
 
     if (!enrollmentResult.success) {
@@ -168,8 +177,16 @@ export class EnrollmentApplicationService {
     courseId: string,
     semester: string
   ): Promise<Result<void, EnrollmentError>> {
+    // まず型安全な変換を行う
+    const identifiersResult = parseIdentifiers({ studentId, courseId, semester });
+    if (!identifiersResult.success) {
+      return identifiersResult;
+    }
+
+    const { studentId: validStudentId, courseId: validCourseId, semester: validSemester } = identifiersResult.data;
+
     // 学生の存在確認
-    const studentExistsResult = await this.studentRepository.exists(studentId as any);
+    const studentExistsResult = await this.studentRepository.exists(validStudentId);
     if (!studentExistsResult.success) {
       return studentExistsResult;
     }
@@ -183,7 +200,7 @@ export class EnrollmentApplicationService {
     }
 
     // 学生の在籍状況確認
-    const studentStatusResult = await this.studentRepository.getEnrollmentStatus(studentId as any);
+    const studentStatusResult = await this.studentRepository.getEnrollmentStatus(validStudentId);
     if (!studentStatusResult.success) {
       return studentStatusResult;
     }
@@ -197,7 +214,7 @@ export class EnrollmentApplicationService {
     }
 
     // 科目の存在確認
-    const courseExistsResult = await this.courseRepository.exists(courseId as any);
+    const courseExistsResult = await this.courseRepository.exists(validCourseId);
     if (!courseExistsResult.success) {
       return courseExistsResult;
     }
@@ -211,7 +228,7 @@ export class EnrollmentApplicationService {
     }
 
     // 科目の開講状況確認
-    const courseOfferedResult = await this.courseRepository.isOfferedInSemester(courseId as any, semester as any);
+    const courseOfferedResult = await this.courseRepository.isOfferedInSemester(validCourseId, validSemester);
     if (!courseOfferedResult.success) {
       return courseOfferedResult;
     }
@@ -225,7 +242,7 @@ export class EnrollmentApplicationService {
     }
 
     // 定員確認
-    const capacityResult = await this.courseRepository.getCapacity(courseId as any, semester as any);
+    const capacityResult = await this.courseRepository.getCapacity(validCourseId, validSemester);
     if (!capacityResult.success) {
       return capacityResult;
     }
@@ -249,10 +266,18 @@ export class EnrollmentApplicationService {
     courseId: string,
     semester: string
   ): Promise<Result<void, EnrollmentError>> {
+    // 型安全な変換を行う
+    const identifiersResult = parseIdentifiers({ studentId, courseId, semester });
+    if (!identifiersResult.success) {
+      return identifiersResult;
+    }
+
+    const { studentId: validStudentId, courseId: validCourseId, semester: validSemester } = identifiersResult.data;
+
     const existingEnrollmentResult = await this.enrollmentRepository.findByStudentCourseAndSemester(
-      studentId as any,
-      courseId as any,
-      semester as any
+      validStudentId,
+      validCourseId,
+      validSemester
     );
 
     if (!existingEnrollmentResult.success) {

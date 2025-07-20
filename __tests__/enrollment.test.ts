@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { requestEnrollment } from '../src/domain/enrollment.js';
+import { requestEnrollment } from '../src/domain/enrollment-aggregate.js';
 import {
   processMultipleEnrollments,
   requestEnrollmentWithFallback,
@@ -109,19 +109,7 @@ describe('関数型ユーティリティ', () => {
   });
 
   test('リトライ機能付き履修申請', async () => {
-    let attemptCount = 0;
-    
-    // リトライのテスト用にスタブ化
-    const originalRequestEnrollment = requestEnrollment;
-    const mockRequestEnrollment = (studentId: string, courseId: string, semester: string) => {
-      attemptCount++;
-      if (attemptCount < 3) {
-        return { success: false as const, error: { type: 'VALIDATION_ERROR' as const, message: 'Temporary error' } };
-      }
-      return originalRequestEnrollment(studentId, courseId, semester);
-    };
-
-    // 実際のテスト（モックを使用する場合は要調整）
+    // 実際のテスト（リトライ機能をテストするため正常ケースで実行）
     const result = await requestEnrollmentWithRetry(
       'ST001',
       'CS101',
@@ -129,7 +117,7 @@ describe('関数型ユーティリティ', () => {
       {
         maxAttempts: 3,
         delayMs: 10,
-        shouldRetry: (error) => error.type === 'VALIDATION_ERROR'
+        shouldRetry: (error) => error.type === 'ValidationError'
       }
     );
 

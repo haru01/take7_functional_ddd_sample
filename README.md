@@ -1,5 +1,5 @@
 ```
-履修を申請できるまで(Requested)、 を domain だけでなく、application,infrastructure tests まで実装をしてしまいたいです. @CLAUDE.md @sample.md をもとにまずは現状の@src, ＠__tests__を調査し、計画を立てて。実装しないで. 状態は、Requestedまでです。キャンセル等はまだ不要です.計画は　TODO.md に出力してください。
+履修のApproved状態まで進めてる、計画を立て、TODO.mdを作成してください。実装はまだです。
 ```
 
 ```
@@ -10,8 +10,4 @@
 
 ```
 質問x　の模範回答をお願いします。
-```
-
-```
-履修のApproved状態まで進めてる、計画を立てください。
 ```
