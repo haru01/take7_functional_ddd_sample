@@ -3,11 +3,13 @@ import { z } from 'zod';
 /**
  * Domain層エラー設計思想
  * 
- * なぜ例外ではなくEither型でエラーハンドリングするのか？
+ * なぜ例外ではなくResult型でエラーハンドリングするのか？
  * 1. 型安全性: エラーが型システムで追跡される
  * 2. 明示性: 関数のシグネチャを見るだけでエラーの可能性がわかる
  * 3. 強制的な処理: エラーを無視できない設計
  * 4. 関数型プログラミング: 副作用のない純粋な関数を保つ
+ * 5. 可読性: success/errorで成功・失敗が直感的
+ * 6. 関数合成: flatMapによるエラー伝播の自動化
  */
 
 // === 基底エラースキーマ ===
@@ -129,3 +131,52 @@ export const isNotFoundError = (error: EnrollmentError): error is NotFoundError 
 
 export const isConcurrencyError = (error: EnrollmentError): error is ConcurrencyError =>
   error.type === 'ConcurrencyError';
+
+// === Result型用のエラーファクトリ関数 ===
+import type { Result } from './types.js';
+import { Err } from './types.js';
+
+/**
+ * ValidationErrorを含むResult型を生成
+ */
+export const validationFailure = <T>(
+  message: string,
+  code: string = 'VALIDATION_FAILED',
+  field?: string,
+  value?: unknown
+): Result<T, EnrollmentError> => {
+  return Err(createValidationError(message, code, field, value));
+};
+
+/**
+ * BusinessRuleErrorを含むResult型を生成
+ */
+export const businessRuleFailure = <T>(
+  rule: string,
+  message: string,
+  code: string,
+  context?: Record<string, unknown>
+): Result<T, EnrollmentError> => {
+  return Err(createBusinessRuleError(rule, message, code, context));
+};
+
+/**
+ * NotFoundErrorを含むResult型を生成
+ */
+export const notFoundFailure = <T>(
+  entity: string,
+  id: string
+): Result<T, EnrollmentError> => {
+  return Err(createNotFoundError(entity, id));
+};
+
+/**
+ * ConcurrencyErrorを含むResult型を生成
+ */
+export const concurrencyFailure = <T>(
+  expectedVersion: number,
+  actualVersion: number,
+  entityId: string
+): Result<T, EnrollmentError> => {
+  return Err(createConcurrencyError(expectedVersion, actualVersion, entityId));
+};
