@@ -1,4 +1,4 @@
-import type { Either } from '../../domain/types.js';
+import type { Result } from '../../domain/types.js';
 import type { 
   StudentId, 
   CourseId, 
@@ -12,7 +12,7 @@ import {
   createConcurrencyError,
   createValidationError 
 } from '../../domain/errors.js';
-import { left, right } from '../../domain/types.js';
+import { Ok, Err } from '../../domain/types.js';
 
 import type { 
   IEnrollmentRepository,
@@ -55,17 +55,17 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
   async findByStudentAndCourse(
     studentId: StudentId,
     courseId: CourseId
-  ): Promise<Either<EnrollmentError, Enrollment | null>> {
+  ): Promise<Result<Enrollment | null, EnrollmentError>> {
     try {
       // 全ての履修申請から該当するものを検索
       for (const enrollment of this.enrollments.values()) {
         if (enrollment.studentId === studentId && enrollment.courseId === courseId) {
-          return right(enrollment);
+          return Ok(enrollment);
         }
       }
-      return right(null);
+      return Ok(null);
     } catch (error) {
-      return left(createValidationError(
+      return Err(createValidationError(
         'Failed to search enrollments',
         'REPOSITORY_ERROR',
         undefined,
@@ -81,13 +81,13 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
     studentId: StudentId,
     courseId: CourseId,
     semester: Semester
-  ): Promise<Either<EnrollmentError, Enrollment | null>> {
+  ): Promise<Result<Enrollment | null, EnrollmentError>> {
     try {
       const aggregateId = this.generateAggregateId(studentId, courseId, semester);
       const enrollment = this.enrollments.get(aggregateId);
-      return right(enrollment || null);
+      return Ok(enrollment || null);
     } catch (error) {
-      return left(createValidationError(
+      return Err(createValidationError(
         'Failed to find enrollment',
         'REPOSITORY_ERROR',
         undefined,
@@ -108,7 +108,7 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
   async save(
     enrollment: Enrollment,
     domainEvent: EnrollmentDomainEvent
-  ): Promise<Either<EnrollmentError, void>> {
+  ): Promise<Result<void, EnrollmentError>> {
     try {
       const aggregateId = this.generateAggregateId(
         enrollment.studentId,
@@ -119,7 +119,7 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
       // 楽観的ロックチェック
       const existingEnrollment = this.enrollments.get(aggregateId);
       if (existingEnrollment && existingEnrollment.version >= enrollment.version) {
-        return left(createConcurrencyError(
+        return Err(createConcurrencyError(
           enrollment.version,
           existingEnrollment.version,
           aggregateId
@@ -134,9 +134,9 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
       // 集約状態の更新
       this.enrollments.set(aggregateId, enrollment);
 
-      return right(undefined);
+      return Ok(undefined);
     } catch (error) {
-      return left(createValidationError(
+      return Err(createValidationError(
         'Failed to save enrollment',
         'REPOSITORY_ERROR',
         undefined,
@@ -152,13 +152,13 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
     studentId: StudentId,
     courseId: CourseId,
     semester: Semester
-  ): Promise<Either<EnrollmentError, EnrollmentDomainEvent[]>> {
+  ): Promise<Result<EnrollmentDomainEvent[], EnrollmentError>> {
     try {
       const aggregateId = this.generateAggregateId(studentId, courseId, semester);
       const events = this.events.get(aggregateId) || [];
-      return right([...events]); // コピーを返す（不変性保証）
+      return Ok([...events]); // コピーを返す（不変性保証）
     } catch (error) {
-      return left(createValidationError(
+      return Err(createValidationError(
         'Failed to get event stream',
         'REPOSITORY_ERROR',
         undefined,
@@ -212,19 +212,19 @@ export class MockStudentRepository implements IStudentRepository {
     this.students.set(studentId, { exists, status });
   }
 
-  async exists(studentId: StudentId): Promise<Either<EnrollmentError, boolean>> {
+  async exists(studentId: StudentId): Promise<Result<boolean, EnrollmentError>> {
     const student = this.students.get(studentId);
-    return right(student?.exists || false);
+    return Ok(student?.exists || false);
   }
 
   async getEnrollmentStatus(
     studentId: StudentId
-  ): Promise<Either<EnrollmentError, 'active' | 'inactive' | 'graduated' | 'withdrawn'>> {
+  ): Promise<Result<'active' | 'inactive' | 'graduated' | 'withdrawn', EnrollmentError>> {
     const student = this.students.get(studentId);
     if (!student?.exists) {
-      return left(createNotFoundError('Student', studentId));
+      return Err(createNotFoundError('Student', studentId));
     }
-    return right(student.status);
+    return Ok(student.status);
   }
 
   clear(): void {
@@ -266,39 +266,39 @@ export class MockCourseRepository implements ICourseRepository {
     this.courses.set(courseId, { exists, offerings: offeringsMap });
   }
 
-  async exists(courseId: CourseId): Promise<Either<EnrollmentError, boolean>> {
+  async exists(courseId: CourseId): Promise<Result<boolean, EnrollmentError>> {
     const course = this.courses.get(courseId);
-    return right(course?.exists || false);
+    return Ok(course?.exists || false);
   }
 
   async isOfferedInSemester(
     courseId: CourseId,
     semester: Semester
-  ): Promise<Either<EnrollmentError, boolean>> {
+  ): Promise<Result<boolean, EnrollmentError>> {
     const course = this.courses.get(courseId);
     if (!course?.exists) {
-      return right(false);
+      return Ok(false);
     }
     
     const offering = course.offerings.get(semester);
-    return right(offering?.offered || false);
+    return Ok(offering?.offered || false);
   }
 
   async getCapacity(
     courseId: CourseId,
     semester: Semester
-  ): Promise<Either<EnrollmentError, { max: number; current: number }>> {
+  ): Promise<Result<{ max: number; current: number }, EnrollmentError>> {
     const course = this.courses.get(courseId);
     if (!course?.exists) {
-      return left(createNotFoundError('Course', courseId));
+      return Err(createNotFoundError('Course', courseId));
     }
 
     const offering = course.offerings.get(semester);
     if (!offering) {
-      return left(createNotFoundError('CourseOffering', `${courseId}-${semester}`));
+      return Err(createNotFoundError('CourseOffering', `${courseId}-${semester}`));
     }
 
-    return right({
+    return Ok({
       max: offering.maxCapacity,
       current: offering.currentEnrollment
     });

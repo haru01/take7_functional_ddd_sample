@@ -1,4 +1,4 @@
-import type { Either } from '../domain/types.js';
+import type { Result } from '../domain/types.js';
 import type { EnrollmentError } from '../domain/errors.js';
 import type { 
   StudentId, 
@@ -39,7 +39,7 @@ export interface IEnrollmentDomainService {
       causationId?: string;
       metadata?: Record<string, unknown>;
     }
-  ): Either<EnrollmentError, Enrollment & { domainEvent: EnrollmentDomainEvent }>;
+  ): Result<Enrollment & { domainEvent: EnrollmentDomainEvent }, EnrollmentError>;
 
   /**
    * イベントストリームからの状態復元
@@ -49,7 +49,7 @@ export interface IEnrollmentDomainService {
    */
   reconstructFromEvents(
     events: EnrollmentDomainEvent[]
-  ): Either<EnrollmentError, Enrollment | null>;
+  ): Result<Enrollment | null, EnrollmentError>;
 }
 
 // === セカンダリポート（外部システムとの連携） ===
@@ -65,7 +65,7 @@ export interface IEnrollmentRepository {
   findByStudentAndCourse(
     studentId: StudentId,
     courseId: CourseId
-  ): Promise<Either<EnrollmentError, Enrollment | null>>;
+  ): Promise<Result<Enrollment | null, EnrollmentError>>;
 
   /**
    * 履修申請の検索（学生と科目と学期の組み合わせ）
@@ -79,7 +79,7 @@ export interface IEnrollmentRepository {
     studentId: StudentId,
     courseId: CourseId,
     semester: Semester
-  ): Promise<Either<EnrollmentError, Enrollment | null>>;
+  ): Promise<Result<Enrollment | null, EnrollmentError>>;
 
   /**
    * 履修申請の保存（新規作成・更新）
@@ -91,7 +91,7 @@ export interface IEnrollmentRepository {
   save(
     enrollment: Enrollment,
     domainEvent: EnrollmentDomainEvent
-  ): Promise<Either<EnrollmentError, void>>;
+  ): Promise<Result<void, EnrollmentError>>;
 
   /**
    * イベントストリームの取得
@@ -105,7 +105,7 @@ export interface IEnrollmentRepository {
     studentId: StudentId,
     courseId: CourseId,
     semester: Semester
-  ): Promise<Either<EnrollmentError, EnrollmentDomainEvent[]>>;
+  ): Promise<Result<EnrollmentDomainEvent[], EnrollmentError>>;
 }
 
 export interface IStudentRepository {
@@ -115,7 +115,7 @@ export interface IStudentRepository {
    * @param studentId 学生ID
    * @returns 学生が存在するかどうか、またはエラー
    */
-  exists(studentId: StudentId): Promise<Either<EnrollmentError, boolean>>;
+  exists(studentId: StudentId): Promise<Result<boolean, EnrollmentError>>;
 
   /**
    * 学生の在籍状況確認
@@ -125,7 +125,7 @@ export interface IStudentRepository {
    */
   getEnrollmentStatus(
     studentId: StudentId
-  ): Promise<Either<EnrollmentError, 'active' | 'inactive' | 'graduated' | 'withdrawn'>>;
+  ): Promise<Result<'active' | 'inactive' | 'graduated' | 'withdrawn', EnrollmentError>>;
 }
 
 export interface ICourseRepository {
@@ -135,7 +135,7 @@ export interface ICourseRepository {
    * @param courseId 科目ID
    * @returns 科目が存在するかどうか、またはエラー
    */
-  exists(courseId: CourseId): Promise<Either<EnrollmentError, boolean>>;
+  exists(courseId: CourseId): Promise<Result<boolean, EnrollmentError>>;
 
   /**
    * 科目の開講状況確認
@@ -147,7 +147,7 @@ export interface ICourseRepository {
   isOfferedInSemester(
     courseId: CourseId,
     semester: Semester
-  ): Promise<Either<EnrollmentError, boolean>>;
+  ): Promise<Result<boolean, EnrollmentError>>;
 
   /**
    * 科目の定員確認
@@ -159,7 +159,7 @@ export interface ICourseRepository {
   getCapacity(
     courseId: CourseId,
     semester: Semester
-  ): Promise<Either<EnrollmentError, { max: number; current: number }>>;
+  ): Promise<Result<{ max: number; current: number }, EnrollmentError>>;
 }
 
 // === 外部システム連携ポート ===
@@ -173,7 +173,7 @@ export interface INotificationService {
    */
   notifyEnrollmentRequested(
     event: EnrollmentDomainEvent
-  ): Promise<Either<EnrollmentError, void>>;
+  ): Promise<Result<void, EnrollmentError>>;
 }
 
 export interface IEventPublisher {
@@ -185,7 +185,7 @@ export interface IEventPublisher {
    */
   publish(
     events: EnrollmentDomainEvent[]
-  ): Promise<Either<EnrollmentError, void>>;
+  ): Promise<Result<void, EnrollmentError>>;
 }
 
 /**

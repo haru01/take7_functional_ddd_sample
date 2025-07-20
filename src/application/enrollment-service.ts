@@ -2,7 +2,7 @@ import type { Either } from '../domain/types.js';
 import type { EnrollmentError } from '../domain/errors.js';
 import { createBusinessRuleError } from '../domain/errors.js';
 import { requestEnrollment } from '../domain/enrollment-aggregate.js';
-import { left, right } from '../domain/types.js';
+import { left, right, resultToEither } from '../domain/types.js';
 
 import type {
   IEnrollmentRepository,
@@ -118,8 +118,9 @@ export class EnrollmentApplicationService {
 
     // Step 5: 永続化（トランザクション）
     const saveResult = await this.enrollmentRepository.save(enrollment, domainEvent);
-    if (saveResult.type === 'left') {
-      return left(mapErrorToResponse(saveResult.value));
+    const saveResultEither = resultToEither(saveResult);
+    if (saveResultEither.type === 'left') {
+      return left(mapErrorToResponse(saveResultEither.value));
     }
 
     // Step 6: イベント発行（永続化成功後）
@@ -146,11 +147,12 @@ export class EnrollmentApplicationService {
       semester as any
     );
 
-    if (enrollmentResult.type === 'left') {
-      return left(mapErrorToResponse(enrollmentResult.value));
+    const enrollmentResultEither = resultToEither(enrollmentResult);
+    if (enrollmentResultEither.type === 'left') {
+      return left(mapErrorToResponse(enrollmentResultEither.value));
     }
 
-    const enrollment = enrollmentResult.value;
+    const enrollment = enrollmentResultEither.value;
     if (!enrollment) {
       return right(null);
     }
@@ -170,10 +172,11 @@ export class EnrollmentApplicationService {
   ): Promise<Either<EnrollmentError, void>> {
     // 学生の存在・在籍確認
     const studentExistsResult = await this.studentRepository.exists(studentId as any);
-    if (studentExistsResult.type === 'left') {
-      return studentExistsResult;
+    const studentExistsEither = resultToEither(studentExistsResult);
+    if (studentExistsEither.type === 'left') {
+      return studentExistsEither;
     }
-    if (!studentExistsResult.value) {
+    if (!studentExistsEither.value) {
       return left(createBusinessRuleError(
         'STUDENT_NOT_FOUND',
         `Student with ID ${studentId} not found`,
@@ -182,24 +185,26 @@ export class EnrollmentApplicationService {
     }
 
     const studentStatusResult = await this.studentRepository.getEnrollmentStatus(studentId as any);
-    if (studentStatusResult.type === 'left') {
-      return studentStatusResult;
+    const studentStatusEither = resultToEither(studentStatusResult);
+    if (studentStatusEither.type === 'left') {
+      return studentStatusEither;
     }
-    if (studentStatusResult.value !== 'active') {
+    if (studentStatusEither.value !== 'active') {
       return left(createBusinessRuleError(
         'STUDENT_NOT_ACTIVE',
-        `Student ${studentId} is not active (status: ${studentStatusResult.value})`,
+        `Student ${studentId} is not active (status: ${studentStatusEither.value})`,
         'STUDENT_NOT_ACTIVE',
-        { studentStatus: studentStatusResult.value }
+        { studentStatus: studentStatusEither.value }
       ));
     }
 
     // 科目の存在・開講確認
     const courseExistsResult = await this.courseRepository.exists(courseId as any);
-    if (courseExistsResult.type === 'left') {
-      return courseExistsResult;
+    const courseExistsEither = resultToEither(courseExistsResult);
+    if (courseExistsEither.type === 'left') {
+      return courseExistsEither;
     }
-    if (!courseExistsResult.value) {
+    if (!courseExistsEither.value) {
       return left(createBusinessRuleError(
         'COURSE_NOT_FOUND',
         `Course with ID ${courseId} not found`,
@@ -211,10 +216,11 @@ export class EnrollmentApplicationService {
       courseId as any,
       semester as any
     );
-    if (courseOfferedResult.type === 'left') {
-      return courseOfferedResult;
+    const courseOfferedEither = resultToEither(courseOfferedResult);
+    if (courseOfferedEither.type === 'left') {
+      return courseOfferedEither;
     }
-    if (!courseOfferedResult.value) {
+    if (!courseOfferedEither.value) {
       return left(createBusinessRuleError(
         'COURSE_NOT_OFFERED',
         `Course ${courseId} is not offered in semester ${semester}`,
@@ -227,17 +233,18 @@ export class EnrollmentApplicationService {
       courseId as any,
       semester as any
     );
-    if (capacityResult.type === 'left') {
-      return capacityResult;
+    const capacityEither = resultToEither(capacityResult);
+    if (capacityEither.type === 'left') {
+      return capacityEither;
     }
-    if (capacityResult.value.current >= capacityResult.value.max) {
+    if (capacityEither.value.current >= capacityEither.value.max) {
       return left(createBusinessRuleError(
         'COURSE_CAPACITY_EXCEEDED',
-        `Course ${courseId} has reached its capacity (${capacityResult.value.max})`,
+        `Course ${courseId} has reached its capacity (${capacityEither.value.max})`,
         'COURSE_CAPACITY_EXCEEDED',
         { 
-          maxCapacity: capacityResult.value.max,
-          currentEnrollment: capacityResult.value.current
+          maxCapacity: capacityEither.value.max,
+          currentEnrollment: capacityEither.value.current
         }
       ));
     }
@@ -259,18 +266,19 @@ export class EnrollmentApplicationService {
       semester as any
     );
 
-    if (existingEnrollmentResult.type === 'left') {
-      return existingEnrollmentResult;
+    const existingEnrollmentEither = resultToEither(existingEnrollmentResult);
+    if (existingEnrollmentEither.type === 'left') {
+      return existingEnrollmentEither;
     }
 
-    if (existingEnrollmentResult.value) {
+    if (existingEnrollmentEither.value) {
       return left(createBusinessRuleError(
         'DUPLICATE_ENROLLMENT',
         `Enrollment already exists for student ${studentId}, course ${courseId}, semester ${semester}`,
         'DUPLICATE_ENROLLMENT',
         {
-          existingStatus: existingEnrollmentResult.value.status,
-          existingVersion: existingEnrollmentResult.value.version
+          existingStatus: existingEnrollmentEither.value.status,
+          existingVersion: existingEnrollmentEither.value.version
         }
       ));
     }

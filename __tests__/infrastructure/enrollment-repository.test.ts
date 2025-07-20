@@ -24,7 +24,7 @@ describe('InMemoryEnrollmentRepository', () => {
         
         const result = await repository.save(enrollment, domainEvent);
         
-        expect(result.type).toBe('right');
+        expect(result.success).toBe(true);
         expect(repository.getEnrollmentCount()).toBe(1);
         expect(repository.getEventCount()).toBe(1);
       }
@@ -44,11 +44,11 @@ describe('InMemoryEnrollmentRepository', () => {
         const { domainEvent, ...enrollment } = secondResult.value;
         const result = await repository.save(enrollment, domainEvent);
         
-        expect(result.type).toBe('left');
-        if (result.type === 'left') {
-          expect(result.value.type).toBe('ConcurrencyError');
-          expect(result.value.expectedVersion).toBe(1);
-          expect(result.value.actualVersion).toBe(1);
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.type).toBe('ConcurrencyError');
+          expect(result.error.expectedVersion).toBe(1);
+          expect(result.error.actualVersion).toBe(1);
         }
       }
     });
@@ -65,21 +65,21 @@ describe('InMemoryEnrollmentRepository', () => {
 
       const result = await repository.findByStudentCourseAndSemester('ST001', 'CS101', '2025-spring');
 
-      expect(result.type).toBe('right');
-      if (result.type === 'right' && result.value) {
-        expect(result.value.studentId).toBe('ST001');
-        expect(result.value.courseId).toBe('CS101');
-        expect(result.value.semester).toBe('2025-spring');
-        expect(result.value.status).toBe('requested');
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        expect(result.data.studentId).toBe('ST001');
+        expect(result.data.courseId).toBe('CS101');
+        expect(result.data.semester).toBe('2025-spring');
+        expect(result.data.status).toBe('requested');
       }
     });
 
     test('存在しない履修申請の検索', async () => {
       const result = await repository.findByStudentCourseAndSemester('ST999', 'CS999', '2025-spring');
 
-      expect(result.type).toBe('right');
-      if (result.type === 'right') {
-        expect(result.value).toBeNull();
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toBeNull();
       }
     });
   });
@@ -102,12 +102,12 @@ describe('InMemoryEnrollmentRepository', () => {
 
       const result = await repository.findByStudentAndCourse('ST001', 'CS101');
 
-      expect(result.type).toBe('right');
-      if (result.type === 'right' && result.value) {
-        expect(result.value.studentId).toBe('ST001');
-        expect(result.value.courseId).toBe('CS101');
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        expect(result.data.studentId).toBe('ST001');
+        expect(result.data.courseId).toBe('CS101');
         // どちらかの学期が返される（実装では最初に見つかったもの）
-        expect(['2025-spring', '2025-fall']).toContain(result.value.semester);
+        expect(['2025-spring', '2025-fall']).toContain(result.data.semester);
       }
     });
   });
@@ -122,21 +122,21 @@ describe('InMemoryEnrollmentRepository', () => {
 
       const result = await repository.getEventStream('ST001', 'CS101', '2025-spring');
 
-      expect(result.type).toBe('right');
-      if (result.type === 'right') {
-        expect(result.value).toHaveLength(1);
-        expect(result.value[0].eventType).toBe('EnrollmentRequested');
-        expect(result.value[0].studentId).toBe('ST001');
-        expect(result.value[0].courseId).toBe('CS101');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toHaveLength(1);
+        expect(result.data[0].eventType).toBe('EnrollmentRequested');
+        expect(result.data[0].studentId).toBe('ST001');
+        expect(result.data[0].courseId).toBe('CS101');
       }
     });
 
     test('存在しない集約のイベントストリーム', async () => {
       const result = await repository.getEventStream('ST999', 'CS999', '2025-spring');
 
-      expect(result.type).toBe('right');
-      if (result.type === 'right') {
-        expect(result.value).toHaveLength(0);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toHaveLength(0);
       }
     });
 
@@ -150,13 +150,13 @@ describe('InMemoryEnrollmentRepository', () => {
       const result1 = await repository.getEventStream('ST001', 'CS101', '2025-spring');
       const result2 = await repository.getEventStream('ST001', 'CS101', '2025-spring');
 
-      expect(result1.type).toBe('right');
-      expect(result2.type).toBe('right');
+      expect(result1.success).toBe(true);
+      expect(result2.success).toBe(true);
       
-      if (result1.type === 'right' && result2.type === 'right') {
+      if (result1.success && result2.success) {
         // 同じ内容だが異なるインスタンス（コピーが返される）
-        expect(result1.value).toEqual(result2.value);
-        expect(result1.value).not.toBe(result2.value);
+        expect(result1.data).toEqual(result2.data);
+        expect(result1.data).not.toBe(result2.data);
       }
     });
   });
@@ -215,14 +215,14 @@ describe('MockStudentRepository', () => {
     const existsResult = await repository.exists('ST001');
     const statusResult = await repository.getEnrollmentStatus('ST001');
 
-    expect(existsResult.type).toBe('right');
-    if (existsResult.type === 'right') {
-      expect(existsResult.value).toBe(true);
+    expect(existsResult.success).toBe(true);
+    if (existsResult.success) {
+      expect(existsResult.data).toBe(true);
     }
 
-    expect(statusResult.type).toBe('right');
-    if (statusResult.type === 'right') {
-      expect(statusResult.value).toBe('active');
+    expect(statusResult.success).toBe(true);
+    if (statusResult.success) {
+      expect(statusResult.data).toBe('active');
     }
   });
 
@@ -230,14 +230,14 @@ describe('MockStudentRepository', () => {
     const existsResult = await repository.exists('ST999');
     const statusResult = await repository.getEnrollmentStatus('ST999');
 
-    expect(existsResult.type).toBe('right');
-    if (existsResult.type === 'right') {
-      expect(existsResult.value).toBe(false);
+    expect(existsResult.success).toBe(true);
+    if (existsResult.success) {
+      expect(existsResult.data).toBe(false);
     }
 
-    expect(statusResult.type).toBe('left');
-    if (statusResult.type === 'left') {
-      expect(statusResult.value.type).toBe('NotFoundError');
+    expect(statusResult.success).toBe(false);
+    if (!statusResult.success) {
+      expect(statusResult.error.type).toBe('NotFoundError');
     }
   });
 });
@@ -263,20 +263,20 @@ describe('MockCourseRepository', () => {
     const offeredResult = await repository.isOfferedInSemester('CS101', '2025-spring');
     const capacityResult = await repository.getCapacity('CS101', '2025-spring');
 
-    expect(existsResult.type).toBe('right');
-    if (existsResult.type === 'right') {
-      expect(existsResult.value).toBe(true);
+    expect(existsResult.success).toBe(true);
+    if (existsResult.success) {
+      expect(existsResult.data).toBe(true);
     }
 
-    expect(offeredResult.type).toBe('right');
-    if (offeredResult.type === 'right') {
-      expect(offeredResult.value).toBe(true);
+    expect(offeredResult.success).toBe(true);
+    if (offeredResult.success) {
+      expect(offeredResult.data).toBe(true);
     }
 
-    expect(capacityResult.type).toBe('right');
-    if (capacityResult.type === 'right') {
-      expect(capacityResult.value.max).toBe(30);
-      expect(capacityResult.value.current).toBe(10);
+    expect(capacityResult.success).toBe(true);
+    if (capacityResult.success) {
+      expect(capacityResult.data.max).toBe(30);
+      expect(capacityResult.data.current).toBe(10);
     }
   });
 
@@ -293,14 +293,14 @@ describe('MockCourseRepository', () => {
     const offeredResult = await repository.isOfferedInSemester('CS101', '2025-spring');
     const capacityResult = await repository.getCapacity('CS101', '2025-spring');
 
-    expect(offeredResult.type).toBe('right');
-    if (offeredResult.type === 'right') {
-      expect(offeredResult.value).toBe(false);
+    expect(offeredResult.success).toBe(true);
+    if (offeredResult.success) {
+      expect(offeredResult.data).toBe(false);
     }
 
-    expect(capacityResult.type).toBe('left');
-    if (capacityResult.type === 'left') {
-      expect(capacityResult.value.type).toBe('NotFoundError');
+    expect(capacityResult.success).toBe(false);
+    if (!capacityResult.success) {
+      expect(capacityResult.error.type).toBe('NotFoundError');
     }
   });
 });
