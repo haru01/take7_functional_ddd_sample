@@ -12,11 +12,15 @@ import {
   type Semester,
   Ok,
   Err,
-  Result as ResultUtils,
+  map,
+  match,
   resultPipe,
   asyncResultPipe,
-  AsyncResult
-} from './types.js';
+  parallel,
+  sequence,
+  retry,
+  race
+} from './types/index.js';
 
 import { requestEnrollment } from './enrollment-aggregate.js';
 import { createBusinessRuleError, type EnrollmentError } from './errors.js';
@@ -34,17 +38,17 @@ export async function processMultipleEnrollments(
   }>
 ): Promise<Result<RequestedEnrollment[], EnrollmentError[]>> {
   // 並列処理でのResult型合成
-  const enrollmentResults = await AsyncResult.parallel(
+  const enrollmentResults = await parallel(
     enrollmentRequests.map(request => async () => {
       // 各申請を個別に処理
       const result = requestEnrollment(request.studentId, request.courseId, request.semester);
       // ドメインイベントを除いてRequestedEnrollmentのみを返す
-      return ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment);
+      return map(result, ({ domainEvent, ...enrollment }) => enrollment);
     })
   );
 
   // 成功した申請のみを収集、失敗は別途エラー配列に
-  return ResultUtils.match(enrollmentResults, {
+  return match(enrollmentResults, {
     success: (enrollments) => Ok(enrollments),
     error: (error) => Err([error])
   });
@@ -69,7 +73,7 @@ export function requestEnrollmentWithFallback(
   );
 
   // ドメインイベントを除いてRequestedEnrollmentのみを扱う
-  const primaryResultWithoutEvent = ResultUtils.map(primaryResult, ({ domainEvent, ...enrollment }) => enrollment);
+  const primaryResultWithoutEvent = map(primaryResult, ({ domainEvent, ...enrollment }) => enrollment);
 
   if (primaryResultWithoutEvent.success) {
     return primaryResultWithoutEvent;
@@ -82,16 +86,19 @@ export function requestEnrollmentWithFallback(
       fallbackCourseId,
       primaryRequest.semester
     );
-    return ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment);
+    return map(result, ({ domainEvent, ...enrollment }) => enrollment);
   });
 
   // 最初に成功したものを返す
-  const firstSuccess = ResultUtils.firstSuccess(fallbackResults);
+  const errors: EnrollmentError[] = [primaryResultWithoutEvent.error];
+  for (const result of fallbackResults) {
+    if (result.success) {
+      return Ok(result.data);
+    }
+    errors.push(result.error);
+  }
   
-  return ResultUtils.match(firstSuccess, {
-    success: (enrollment) => Ok(enrollment),
-    error: (errors) => Err([primaryResultWithoutEvent.error, ...errors])
-  });
+  return Err(errors);
 }
 
 /**
@@ -108,30 +115,28 @@ export async function conditionalEnrollmentProcessing(
   }
 ): Promise<Result<RequestedEnrollment, EnrollmentError>> {
   // 全ての前提条件を並列チェック
-  const conditionsResult = await AsyncResult.parallel([
+  const conditionsResult = await parallel([
     conditions.checkPrerequisites,
     conditions.checkCapacity,
     conditions.checkScheduleConflict
   ]);
 
-  return ResultUtils.match(conditionsResult, {
+  return match(conditionsResult, {
     success: ([prereqOk, capacityOk, scheduleOk]) => {
       // 全ての条件が満たされているかチェック
       const allConditionsMet = prereqOk && capacityOk && scheduleOk;
       
-      return ResultUtils.when(
-        allConditionsMet || false,
-        () => {
-          const result = requestEnrollment(studentId, courseId, semester);
-          return ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment);
-        },
-        () => Err(createBusinessRuleError(
+      if (allConditionsMet) {
+        const result = requestEnrollment(studentId, courseId, semester);
+        return map(result, ({ domainEvent, ...enrollment }) => enrollment);
+      } else {
+        return Err(createBusinessRuleError(
           'ENROLLMENT_CONDITIONS_NOT_MET',
           `Enrollment conditions not met: prereq=${prereqOk}, capacity=${capacityOk}, schedule=${scheduleOk}`,
           'ENROLLMENT_CONDITIONS_NOT_MET',
           { prereqOk, capacityOk, scheduleOk }
-        ))
-      );
+        ));
+      }
     },
     error: (error) => Err(error)
   });
@@ -150,12 +155,12 @@ export async function requestEnrollmentWithRetry(
     shouldRetry: (error: EnrollmentError) => boolean;
   }
 ): Promise<Result<RequestedEnrollment, EnrollmentError>> {
-  return AsyncResult.retry(
+  return retry(
     async () => {
       // 非同期操作として履修申請を実行
       const result = requestEnrollment(studentId, courseId, semester);
       return Promise.resolve(
-        ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment)
+        map(result, ({ domainEvent, ...enrollment }) => enrollment)
       );
     },
     {
@@ -183,19 +188,19 @@ export async function processEnrollmentBatch(
   );
 
   // 順次実行（前の結果を次の処理に渡す）
-  const processedResults = await AsyncResult.sequence(
+  const processedResults = await sequence(
     sortedRequests.map(request => async (previousResults) => {
       console.log(`Processing enrollment for student ${request.studentId}, course ${request.courseId}`);
       console.log(`Previous results count: ${previousResults?.length || 0}`);
       
       const result = requestEnrollment(request.studentId, request.courseId, request.semester);
       return Promise.resolve(
-        ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment)
+        map(result, ({ domainEvent, ...enrollment }) => enrollment)
       );
     })
   );
 
-  return ResultUtils.match(processedResults, {
+  return match(processedResults, {
     success: (enrollments) => Ok(enrollments),
     error: (error) => Err([error])
   });
@@ -219,7 +224,7 @@ export async function advancedEnrollmentProcessing(
     // メインの学期
     allAttempts.push(
       Promise.resolve(
-        ResultUtils.map(
+        map(
           requestEnrollment(studentId, option.courseId, option.semester),
           ({ domainEvent, ...enrollment }) => enrollment
         )
@@ -231,7 +236,7 @@ export async function advancedEnrollmentProcessing(
       for (const altSemester of option.alternativeSemesters) {
         allAttempts.push(
           Promise.resolve(
-            ResultUtils.map(
+            map(
               requestEnrollment(studentId, option.courseId, altSemester),
               ({ domainEvent, ...enrollment }) => enrollment
             )
@@ -242,11 +247,11 @@ export async function advancedEnrollmentProcessing(
   }
 
   // レース実行 - 最初に成功したものを採用
-  const raceResult = await AsyncResult.race(
+  const raceResult = await race(
     allAttempts.map(promise => () => promise)
   );
 
-  return ResultUtils.match(raceResult, {
+  return match(raceResult, {
     success: (enrollment) => Ok([enrollment]),
     error: (errors) => Err(errors)
   });
@@ -254,8 +259,12 @@ export async function advancedEnrollmentProcessing(
 
 // === エクスポート ===
 export {
-  ResultUtils,
+  map,
+  match,
   resultPipe,
   asyncResultPipe,
-  AsyncResult
+  parallel,
+  sequence,
+  retry,
+  race
 };

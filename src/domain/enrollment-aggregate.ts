@@ -9,10 +9,10 @@ import {
   SemesterSchema,
   Ok,
   Err,
-  Result as ResultUtils,
-  resultPipe,
-  AsyncResult
-} from './types.js';
+  parseWith,
+  allTuple,
+  map
+} from './types/index.js';
 import {
   type EnrollmentError,
   createValidationError,
@@ -157,7 +157,7 @@ function validateInputs(input: {
 }, EnrollmentError> {
   // 並列バリデーション
   const validations = [
-    ResultUtils.parseWith(
+    parseWith(
       StudentIdSchema,
       input.studentId,
       () => createValidationError(
@@ -167,7 +167,7 @@ function validateInputs(input: {
         input.studentId
       )
     ),
-    ResultUtils.parseWith(
+    parseWith(
       CourseIdSchema,
       input.courseId,
       () => createValidationError(
@@ -177,7 +177,7 @@ function validateInputs(input: {
         input.courseId
       )
     ),
-    ResultUtils.parseWith(
+    parseWith(
       SemesterSchema,
       input.semester,
       () => createValidationError(
@@ -189,13 +189,18 @@ function validateInputs(input: {
     )
   ] as const;
 
-  const allValidations = ResultUtils.allTuple(validations);
+  const allValidations = allTuple(validations);
   
-  return ResultUtils.map(allValidations, ([studentId, courseId, semester]) => ({
+  if (!allValidations.success) {
+    return allValidations;
+  }
+  
+  const [studentId, courseId, semester] = allValidations.data;
+  return Ok({
     studentId,
     courseId,
     semester
-  }));
+  });
 }
 
 // ビジネスルール適用（Result型使用）

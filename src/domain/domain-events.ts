@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { StudentIdSchema, CourseIdSchema, SemesterSchema } from './types.js';
+import { StudentIdSchema, CourseIdSchema, SemesterSchema } from './types/index.js';
 
 /**
  * ドメインイベント設計思想

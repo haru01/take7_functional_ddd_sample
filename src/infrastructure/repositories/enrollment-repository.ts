@@ -1,10 +1,10 @@
-import type { Result } from '../../domain/types.js';
+import type { Result } from '../../domain/types/index.js';
 import type { 
   StudentId, 
   CourseId, 
   Semester,
   Enrollment 
-} from '../../domain/types.js';
+} from '../../domain/types/index.js';
 import type { EnrollmentError } from '../../domain/errors.js';
 import type { EnrollmentDomainEvent } from '../../domain/domain-events.js';
 import { 
@@ -12,13 +12,20 @@ import {
   createConcurrencyError,
   createValidationError 
 } from '../../domain/errors.js';
-import { Ok, Err } from '../../domain/types.js';
+import { Ok, Err } from '../../domain/types/index.js';
 
 import type { 
   IEnrollmentRepository,
   IStudentRepository,
   ICourseRepository 
 } from '../../application/ports.js';
+
+import { 
+  InMemoryEventStore,
+  EventStreamFactory,
+  type IEventStore
+} from '../event-store/index.js';
+
 
 /**
  * インメモリリポジトリ実装
@@ -37,6 +44,17 @@ import type {
 export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
   private enrollments = new Map<string, Enrollment>();
   private events = new Map<string, EnrollmentDomainEvent[]>();
+  
+  // Event Store機能（オプショナル）
+  private eventStore?: IEventStore;
+  private eventStreamFactory?: EventStreamFactory;
+
+  constructor(useEventStore: boolean = false) {
+    if (useEventStore) {
+      this.eventStore = new InMemoryEventStore();
+      this.eventStreamFactory = new EventStreamFactory(this.eventStore);
+    }
+  }
 
   /**
    * 集約IDの生成
@@ -116,25 +134,13 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
         enrollment.semester
       );
 
-      // 楽観的ロックチェック
-      const existingEnrollment = this.enrollments.get(aggregateId);
-      if (existingEnrollment && existingEnrollment.version >= enrollment.version) {
-        return Err(createConcurrencyError(
-          enrollment.version,
-          existingEnrollment.version,
-          aggregateId
-        ));
+      // Event Store使用時の処理
+      if (this.eventStore && this.eventStreamFactory) {
+        return await this.saveWithEventStore(enrollment, domainEvent);
       }
 
-      // イベントストリームの更新
-      const existingEvents = this.events.get(aggregateId) || [];
-      const updatedEvents = [...existingEvents, domainEvent];
-      this.events.set(aggregateId, updatedEvents);
-
-      // 集約状態の更新
-      this.enrollments.set(aggregateId, enrollment);
-
-      return Ok(undefined);
+      // 従来のメモリ方式での処理
+      return await this.saveInMemory(enrollment, domainEvent, aggregateId);
     } catch (error) {
       return Err(createValidationError(
         'Failed to save enrollment',
@@ -146,6 +152,72 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
   }
 
   /**
+   * Event Store使用時の保存処理
+   */
+  private async saveWithEventStore(
+    enrollment: Enrollment,
+    domainEvent: EnrollmentDomainEvent
+  ): Promise<Result<void, EnrollmentError>> {
+    if (!this.eventStore || !this.eventStreamFactory) {
+      return Err(createValidationError('Event store not initialized', 'INTERNAL_ERROR'));
+    }
+
+    const stream = this.eventStreamFactory.createEnrollmentStream(
+      enrollment.studentId,
+      enrollment.courseId,
+      enrollment.semester
+    );
+
+    // 楽観的ロック用の期待バージョン
+    const expectedVersion = enrollment.version - 1;
+
+    // Event Storeへの保存
+    const appendResult = await stream.appendEvents([domainEvent], expectedVersion);
+    if (!appendResult.success) {
+      return appendResult;
+    }
+
+    // メモリキャッシュも更新
+    const aggregateId = this.generateAggregateId(
+      enrollment.studentId,
+      enrollment.courseId,
+      enrollment.semester
+    );
+    this.enrollments.set(aggregateId, enrollment);
+
+    return Ok(undefined);
+  }
+
+  /**
+   * 従来のメモリ方式での保存処理
+   */
+  private async saveInMemory(
+    enrollment: Enrollment,
+    domainEvent: EnrollmentDomainEvent,
+    aggregateId: string
+  ): Promise<Result<void, EnrollmentError>> {
+    // 楽観的ロックチェック
+    const existingEnrollment = this.enrollments.get(aggregateId);
+    if (existingEnrollment && existingEnrollment.version >= enrollment.version) {
+      return Err(createConcurrencyError(
+        enrollment.version,
+        existingEnrollment.version,
+        aggregateId
+      ));
+    }
+
+    // イベントストリームの更新
+    const existingEvents = this.events.get(aggregateId) || [];
+    const updatedEvents = [...existingEvents, domainEvent];
+    this.events.set(aggregateId, updatedEvents);
+
+    // 集約状態の更新
+    this.enrollments.set(aggregateId, enrollment);
+
+    return Ok(undefined);
+  }
+
+  /**
    * イベントストリームの取得
    */
   async getEventStream(
@@ -154,6 +226,17 @@ export class InMemoryEnrollmentRepository implements IEnrollmentRepository {
     semester: Semester
   ): Promise<Result<EnrollmentDomainEvent[], EnrollmentError>> {
     try {
+      // Event Store使用時の処理
+      if (this.eventStore && this.eventStreamFactory) {
+        const stream = this.eventStreamFactory.createEnrollmentStream(
+          studentId,
+          courseId,
+          semester
+        );
+        return stream.getAllEvents();
+      }
+
+      // 従来のメモリ方式での処理
       const aggregateId = this.generateAggregateId(studentId, courseId, semester);
       const events = this.events.get(aggregateId) || [];
       return Ok([...events]); // コピーを返す（不変性保証）

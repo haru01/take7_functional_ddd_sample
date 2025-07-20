@@ -133,8 +133,8 @@ export const isConcurrencyError = (error: EnrollmentError): error is Concurrency
   error.type === 'ConcurrencyError';
 
 // === Result型用のエラーファクトリ関数 ===
-import type { Result } from './types.js';
-import { Err } from './types.js';
+import type { Result } from './types/index.js';
+import { Err } from './types/index.js';
 
 /**
  * ValidationErrorを含むResult型を生成

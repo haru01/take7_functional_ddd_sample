@@ -1,8 +1,9 @@
-import type { Result } from '../domain/types.js';
+import type { Result } from '../domain/types/index.js';
 import type { EnrollmentError } from '../domain/errors.js';
 import { createBusinessRuleError, createNotFoundError } from '../domain/errors.js';
 import { requestEnrollment } from '../domain/enrollment-aggregate.js';
-import { Ok, Err, Result as ResultUtils, resultToEither } from '../domain/types.js';
+import { Ok, Err } from '../domain/types/index.js';
+import { getCurrentConfig } from '../config/index.js';
 
 import type {
   IEnrollmentRepository,
@@ -53,6 +54,13 @@ export class EnrollmentApplicationService {
   ) {}
 
   /**
+   * 設定を取得する
+   */
+  private getConfig() {
+    return getCurrentConfig();
+  }
+
+  /**
    * 履修申請ユースケース
    * 
    * フロー:
@@ -101,6 +109,15 @@ export class EnrollmentApplicationService {
     );
     if (!duplicateCheck.success) {
       return Err(mapErrorToResponse(duplicateCheck.error));
+    }
+
+    // Step 3.5: 履修上限チェック
+    const enrollmentLimitCheck = await this.checkEnrollmentLimit(
+      domainInputs.studentId,
+      domainInputs.semester
+    );
+    if (!enrollmentLimitCheck.success) {
+      return Err(mapErrorToResponse(enrollmentLimitCheck.error));
     }
 
     // Step 4: ドメイン操作の実行
@@ -266,6 +283,13 @@ export class EnrollmentApplicationService {
     courseId: string,
     semester: string
   ): Promise<Result<void, EnrollmentError>> {
+    const config = this.getConfig();
+    
+    // 設定で重複履修が許可されている場合はスキップ
+    if (config.businessRules.enrollment.allowDuplicateEnrollment) {
+      return Ok(undefined);
+    }
+
     // 型安全な変換を行う
     const identifiersResult = parseIdentifiers({ studentId, courseId, semester });
     if (!identifiersResult.success) {
@@ -292,6 +316,48 @@ export class EnrollmentApplicationService {
         {
           existingStatus: existingEnrollmentResult.data.status,
           existingVersion: existingEnrollmentResult.data.version
+        }
+      ));
+    }
+
+    return Ok(undefined);
+  }
+
+  /**
+   * 履修上限チェック
+   */
+  private async checkEnrollmentLimit(
+    studentId: string,
+    semester: string
+  ): Promise<Result<void, EnrollmentError>> {
+    const config = this.getConfig();
+    
+    // 学生IDと学期の基本的な形式チェックのみ実行
+    // courseIdは履修上限チェックでは不要なので、簡単な検証のみ
+    if (!studentId || !semester) {
+      return Err(createBusinessRuleError(
+        'INVALID_INPUT',
+        'Student ID and semester are required',
+        'INVALID_INPUT',
+        { studentId, semester }
+      ));
+    }
+
+    // 現在の履修数を取得（実装は簡略化、実際はより複雑な検索が必要）
+    // TODO: 学期ごとの履修数取得メソッドをリポジトリに追加
+    const currentEnrollmentCount = 0; // 現状では0として処理
+
+    const maxCourses = config.businessRules.enrollment.maxCoursesPerSemester;
+    if (currentEnrollmentCount >= maxCourses) {
+      return Err(createBusinessRuleError(
+        'ENROLLMENT_LIMIT_EXCEEDED',
+        `Student ${studentId} has reached maximum enrollment limit for semester ${semester} (${maxCourses})`,
+        'ENROLLMENT_LIMIT_EXCEEDED',
+        {
+          studentId,
+          semester,
+          currentCount: currentEnrollmentCount,
+          maxLimit: maxCourses
         }
       ));
     }

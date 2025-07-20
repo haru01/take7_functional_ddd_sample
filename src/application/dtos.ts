@@ -110,7 +110,7 @@ import type {
   StudentId,
   CourseId,
   Semester
-} from '../domain/types.js';
+} from '../domain/types/index.js';
 import type { EnrollmentError } from '../domain/errors.js';
 import type { EnrollmentDomainEvent } from '../domain/domain-events.js';
 
@@ -182,8 +182,8 @@ export const extractDomainInputs = (command: RequestEnrollmentCommand) => ({
   }
 });
 
-import { StudentIdSchema, CourseIdSchema, SemesterSchema } from '../domain/types.js';
-import { Result, Ok, Err } from '../domain/types.js';
+import { StudentIdSchema, CourseIdSchema, SemesterSchema } from '../domain/types/index.js';
+import { Result, Ok, Err } from '../domain/types/index.js';
 
 /**
  * 型安全な識別子変換ヘルパー関数

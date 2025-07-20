@@ -1,7 +1,7 @@
-import type { Result } from '../../domain/types.js';
+import type { Result } from '../../domain/types/index.js';
 import type { EnrollmentError } from '../../domain/errors.js';
 import type { EnrollmentDomainEvent } from '../../domain/domain-events.js';
-import { Ok } from '../../domain/types.js';
+import { Ok } from '../../domain/types/index.js';
 
 import type { 
   INotificationService,
