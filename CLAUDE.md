@@ -8,8 +8,7 @@
 - 実装の限界を認識し、段階的な改善アプローチを重視します
 
 ### ドメイン駆動設計とテスト駆動による深い洞察の促進
-t_wada（和田拓人）のTDD哲学に基づき、ベイビーステップで対話を進め、対象ドメインに対する理解を深めます。
-AIによる自動による効率性よりも、AIとの対話を通じて、ドメインの本質を理解することを重視します。
+t_wada（和田拓人）のTDD哲学に基づき、ベイビーステップで対話を進め、対象ドメインに対する理解を深めます。AIによる自動による効率性よりも、AIとの対話を通じて、ドメインの本質を理解することを重視します。 何をおこなっているのか、なぜそれが必要なのかを明確にし、ドメインの本質的な制約を理解することを目指します。
 
 ## 開発フレームワーク・言語
 
@@ -43,7 +42,7 @@ AIによる自動による効率性よりも、AIとの対話を通じて、ド�
   - Brand Types - 意味的型区別
   - Discriminated Union -
   型安全な状態表現
-  - Either型 -
+  - Result型 -
   関数型エラーハンドリング
   - 実行時型検証 -
   Zodによる安全性保証
@@ -84,23 +83,34 @@ AIによる自動による効率性よりも、AIとの対話を通じて、ド�
 ```
 src/
 ├── domain/
-│   ├── types.ts                 # Zodによる型定義
+│   ├── types.ts                 # Result型とブランド型定義
 │   ├── errors.ts                # エラー型定義
 │   ├── domain-events.ts         # ドメインイベント
+│   ├── enrollment.ts            # 履修エンティティ（現在の中心的実装）
 │   └── enrollment-aggregate.ts  # 集約操作
 ├── application/
 │   ├── ports.ts                 # 依存性逆転のインターフェース
 │   ├── dtos.ts                  # DTOs
 │   └── enrollment-service.ts    # アプリケーションサービス
 ├── infrastructure/
-│   ├── prisma/
-│   │   └── schema.prisma        # DBスキーマ
-│   └── repositories/
-│       └── enrollment-repository.ts  # リポジトリ実装
-└── tests/
+│   ├── repositories/
+│   │   └── enrollment-repository.ts  # リポジトリ実装
+│   └── services/
+│       └── mock-services.ts     # モックサービス実装
+└── __tests__/
     ├── domain/
+    │   └── enrollment-aggregate.test.ts
     ├── application/
-    └── infrastructure/
+    │   └── enrollment-service.test.ts
+    ├── infrastructure/
+    │   └── enrollment-repository.test.ts
+    ├── integration/
+    │   └── enrollment-flow.test.ts
+    └── enrollment.test.ts       # 統合テスト
+
+package.json                      # プロジェクト設定
+tsconfig.json                     # TypeScript設定
+vitest.config.ts                  # テスト設定
 ```
 
 ## 📊 状態遷移図
@@ -140,17 +150,17 @@ const approvedEnrollment = {
 
 **設計意図**: 状態変更を新しいオブジェクトの生成として表現し、予期しない副作用を防ぐ
 
-#### Either型による明示的なエラーハンドリング
+#### Result型による明示的なエラーハンドリング
 ```typescript
-type Either<L, R> =
-  | { type: 'left'; value: L }   // エラー
-  | { type: 'right'; value: R };  // 成功
+type Result<T, E = Error> = 
+  | { readonly success: true; readonly data: T }
+  | { readonly success: false; readonly error: E };
 
 // 例外を投げる代わりに、エラーを値として扱う
 function approveEnrollment(
   enrollment: RequestedEnrollment,
   approvedBy: string
-): Either<EnrollmentError, ApprovedEnrollment>
+): Result<ApprovedEnrollment, EnrollmentError>
 ```
 
 **設計意図**: エラーを型システムで追跡可能にし、処理の分岐を明示的に
@@ -176,7 +186,7 @@ INSERT INTO domain_events (type, data) VALUES ('EnrollmentApproved', {...});
 // イベントのストリームから現在の状態を構築
 function reconstructEnrollmentFromEvents(
   events: EnrollmentDomainEvent[]
-): Either<EnrollmentError, Enrollment | null> {
+): Result<Enrollment | null, EnrollmentError> {
   // 初期状態から順次イベントを適用
   let enrollment = createInitialState(events[0]);
 
@@ -184,7 +194,7 @@ function reconstructEnrollmentFromEvents(
     enrollment = applyEvent(enrollment, event);
   }
 
-  return right(enrollment);
+  return Ok(enrollment);
 }
 ```
 
@@ -233,7 +243,7 @@ interface IEnrollmentRepository {
   findByStudentAndCourse(
     studentId: StudentId,
     courseId: CourseId
-  ): Promise<Either<EnrollmentError, Enrollment | null>>;
+  ): Promise<Result<Enrollment | null, EnrollmentError>>;
 }
 
 // 実装詳細は外側の層で
@@ -369,6 +379,67 @@ class CQRSEventStore extends OptimizedEventStore {
 }
 ```
 
+## 🚀 実装状況と次のステップ
+
+### 現在の実装状況
+
+1. **コア型定義 (完了)**
+   - Result型によるエラーハンドリング
+   - ブランド型による意味的な型安全性
+   - 履修状態の判別共用体型
+
+2. **ドメインモデル (実装中)**
+   - enrollment.ts: 履修エンティティの中心的実装
+   - domain-events.ts: イベント定義
+   - enrollment-aggregate.ts: 集約操作（基本実装）
+
+3. **インフラストラクチャ (モック実装)**
+   - MockNotificationService: 通知サービスのモック
+   - InMemoryEnrollmentRepository: インメモリリポジトリ
+
+4. **テスト (基礎実装)**
+   - 単体テスト: 各レイヤーの基本的なテスト
+   - 統合テスト: エンドツーエンドのフロー検証
+
+### 次の実装ステップ
+
+#### Phase 1: ドメインロジックの充実
+```typescript
+// 1. ビジネスルールの実装
+- 履修上限チェック（学期あたりの最大履修数）
+- 前提科目チェック
+- 時間割の重複チェック
+
+// 2. イベントソーシングの完全実装
+- イベントストアインターフェース
+- スナップショット機能
+- イベント再生ロジック
+```
+
+#### Phase 2: 永続化層の実装
+```typescript
+// 1. Prismaスキーマの定義
+- enrollmentsテーブル
+- domain_eventsテーブル
+- スナップショットテーブル
+
+// 2. リポジトリ実装
+- PrismaEnrollmentRepository
+- EventStoreRepository
+```
+
+#### Phase 3: アプリケーションサービスの拡充
+```typescript
+// 1. 複雑なユースケース
+- 一括履修登録
+- 履修計画の提案
+- 成績と連動した履修管理
+
+// 2. 外部サービス連携
+- 実際の通知サービス
+- 学生情報システムとの連携
+```
+
 ## 💡 AIとの対話による理解の深化
 
 ### 効果的な質問例
@@ -417,7 +488,7 @@ function cancelApprovedEnrollment(
 
 1. **基礎理解**
    - 単純な状態遷移の実装
-   - Eitherモナドの使い方
+   - Result型の使い方
    - イミュータブルな更新パターン
 
 2. **ドメイン理解の深化**
@@ -445,3 +516,26 @@ function cancelApprovedEnrollment(
 - **現実的**: 理想と現実のバランス
 
 私は、あなたのドメイン理解を深めるパートナーとして、小さなステップで着実に前進することを支援します。
+
+## 🛠️ 開発環境
+
+### セットアップ
+```bash
+# 依存関係のインストール
+npm install
+
+# 型チェック
+npm run typecheck
+
+# テスト実行
+npm test
+npm run test:watch  # ウォッチモード
+npm run test:ui     # UIモード
+npm run coverage    # カバレッジレポート
+```
+
+### 主要な依存関係
+- **TypeScript 5.x**: 型安全性の基盤
+- **Vitest**: 高速なテスティングフレームワーク
+- **Zod**: 実行時型検証ライブラリ
+- **Prisma** (将来的に追加): TypeScript対応ORM
