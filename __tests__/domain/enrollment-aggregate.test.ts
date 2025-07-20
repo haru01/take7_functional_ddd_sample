@@ -8,9 +8,9 @@ describe('履修申請集約', () => {
     test('正常な履修申請でイベントも生成される', () => {
       const result = requestEnrollment('ST001', 'CS101', '2025-spring');
       
-      expect(result.type).toBe('right');
-      if (result.type === 'right') {
-        const { domainEvent, ...enrollment } = result.value;
+      expect(result.success).toBe(true);
+      if (result.success) {
+        const { domainEvent, ...enrollment } = result.data;
         
         // 履修申請の検証
         expect(enrollment.status).toBe('requested');

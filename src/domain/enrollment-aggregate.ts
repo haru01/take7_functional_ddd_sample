@@ -3,12 +3,15 @@ import {
   type CourseId,
   type Semester,
   type RequestedEnrollment,
-  type Either,
+  type Result,
   StudentIdSchema,
   CourseIdSchema,
   SemesterSchema,
-  left,
-  right
+  Ok,
+  Err,
+  Result as ResultUtils,
+  resultPipe,
+  AsyncResult
 } from './types.js';
 import {
   type EnrollmentError,
@@ -38,9 +41,9 @@ import {
  */
 
 // === 集約操作の結果型 ===
-export type EnrollmentAggregateResult<T> = Either<
-  EnrollmentError,
-  T & { domainEvent: EnrollmentDomainEvent }
+export type EnrollmentAggregateResult<T> = Result<
+  T & { domainEvent: EnrollmentDomainEvent },
+  EnrollmentError
 >;
 
 // === 集約操作: 履修申請 ===
@@ -54,147 +57,161 @@ export function requestEnrollment(
     metadata?: Record<string, unknown>;
   }
 ): EnrollmentAggregateResult<RequestedEnrollment> {
-  // Step 1: 入力検証（型レベル + ビジネスルール）
-  const validationResult = validateInputs({ studentId, courseId, semester });
-  if (validationResult.type === 'left') {
-    return validationResult;
-  }
-  
-  const { studentId: validStudentId, courseId: validCourseId, semester: validSemester } = validationResult.value;
-  
-  // Step 2: ビジネスルール適用
-  const businessRuleResult = applyBusinessRules({
-    studentId: validStudentId,
-    courseId: validCourseId,
-    semester: validSemester
-  });
-  if (businessRuleResult.type === 'left') {
-    return businessRuleResult;
-  }
-  
-  // Step 3: 集約の作成
-  const enrollment = createRequestedEnrollment(
-    validStudentId,
-    validCourseId,
-    validSemester
-  );
-  
-  // Step 4: ドメインイベントの生成
-  const domainEvent = createEnrollmentRequestedEvent(
-    validStudentId,
-    validCourseId,
-    validSemester,
-    enrollment.version,
-    options
-  );
-  
-  return right({
-    ...enrollment,
-    domainEvent
-  });
+  // Result型パイプラインを使った関数型実装
+  return resultPipe(validateInputs({ studentId, courseId, semester }))
+    .flatMap((validatedInputs: {
+      studentId: StudentId;
+      courseId: CourseId;
+      semester: Semester;
+    }) =>
+      resultPipe(applyBusinessRules(validatedInputs))
+        .map(() => validatedInputs)
+        .value()
+    )
+    .flatMap((validatedInputs: {
+      studentId: StudentId;
+      courseId: CourseId;
+      semester: Semester;
+    }) => {
+      const { studentId: validStudentId, courseId: validCourseId, semester: validSemester } = validatedInputs;
+      
+      // 集約の作成
+      const enrollment = createRequestedEnrollment(
+        validStudentId,
+        validCourseId,
+        validSemester
+      );
+      
+      // ドメインイベントの生成
+      const domainEvent = createEnrollmentRequestedEvent(
+        validStudentId,
+        validCourseId,
+        validSemester,
+        enrollment.version,
+        options
+      );
+      
+      return Ok({
+        ...enrollment,
+        domainEvent
+      });
+    })
+    .value();
 }
 
 // === イベントストリームからの状態復元 ===
 export function reconstructEnrollmentFromEvents(
   events: EnrollmentDomainEvent[]
-): Either<EnrollmentError, RequestedEnrollment | null> {
-  if (events.length === 0) {
-    return right(null);
-  }
-  
-  // イベントシーケンスの検証
-  if (!validateEventSequence(events)) {
-    return left(createValidationError(
-      'Invalid event sequence',
-      'INVALID_EVENT_SEQUENCE'
-    ));
-  }
-  
-  const sortedEvents = sortEventsByVersion(events);
-  const firstEvent = sortedEvents[0];
-  
-  if (!firstEvent) {
-    return left(createValidationError(
-      'No events to reconstruct from',
-      'NO_EVENTS'
-    ));
-  }
-  
-  // 最初のイベントから状態を復元
-  if (firstEvent.eventType === 'EnrollmentRequested') {
-    const enrollment: RequestedEnrollment = {
-      studentId: firstEvent.studentId,
-      courseId: firstEvent.courseId,
-      semester: firstEvent.data.semester,
-      status: 'requested',
-      requestedAt: firstEvent.data.requestedAt,
-      version: firstEvent.version
-    };
-    
-    return right(enrollment);
-  }
-  
-  return left(createValidationError(
-    'First event must be EnrollmentRequested',
-    'INVALID_FIRST_EVENT'
-  ));
+): Result<RequestedEnrollment | null, EnrollmentError> {
+  // Result型パイプラインでイベント再構築
+  return resultPipe(
+    events.length === 0 
+      ? Ok(null)
+      : validateEventSequence(events)
+        ? Ok(events)
+        : Err(createValidationError(
+            'Invalid event sequence',
+            'INVALID_EVENT_SEQUENCE'
+          ))
+  )
+    .flatMap((validatedEvents: EnrollmentDomainEvent[] | null) => {
+      if (validatedEvents === null) {
+        return Ok(null);
+      }
+      
+      const sortedEvents = sortEventsByVersion(validatedEvents);
+      const firstEvent = sortedEvents[0];
+      
+      if (!firstEvent) {
+        return Err(createValidationError(
+          'No events to reconstruct from',
+          'NO_EVENTS'
+        ));
+      }
+      
+      // 最初のイベントから状態を復元
+      if (firstEvent.eventType === 'EnrollmentRequested') {
+        const enrollment: RequestedEnrollment = {
+          studentId: firstEvent.studentId,
+          courseId: firstEvent.courseId,
+          semester: firstEvent.data.semester,
+          status: 'requested',
+          requestedAt: firstEvent.data.requestedAt,
+          version: firstEvent.version
+        };
+        
+        return Ok(enrollment);
+      }
+      
+      return Err(createValidationError(
+        'First event must be EnrollmentRequested',
+        'INVALID_FIRST_EVENT'
+      ));
+    })
+    .value();
 }
 
 // === 内部ヘルパー関数 ===
 
-// 入力検証
+// 入力検証（Result型パイプライン使用）
 function validateInputs(input: {
   studentId: string;
   courseId: string;
   semester: string;
-}): Either<EnrollmentError, {
+}): Result<{
   studentId: StudentId;
   courseId: CourseId;
   semester: Semester;
-}> {
-  const studentIdResult = StudentIdSchema.safeParse(input.studentId);
-  if (!studentIdResult.success) {
-    return left(createValidationError(
-      `Invalid student ID format: ${input.studentId}`,
-      'INVALID_STUDENT_ID',
-      'studentId',
-      input.studentId
-    ));
-  }
+}, EnrollmentError> {
+  // 並列バリデーション
+  const validations = [
+    ResultUtils.parseWith(
+      StudentIdSchema,
+      input.studentId,
+      () => createValidationError(
+        `Invalid student ID format: ${input.studentId}`,
+        'INVALID_STUDENT_ID',
+        'studentId',
+        input.studentId
+      )
+    ),
+    ResultUtils.parseWith(
+      CourseIdSchema,
+      input.courseId,
+      () => createValidationError(
+        `Invalid course ID format: ${input.courseId}`,
+        'INVALID_COURSE_ID',
+        'courseId',
+        input.courseId
+      )
+    ),
+    ResultUtils.parseWith(
+      SemesterSchema,
+      input.semester,
+      () => createValidationError(
+        `Invalid semester format: ${input.semester}. Expected format: YYYY-(spring|summer|fall)`,
+        'INVALID_SEMESTER',
+        'semester',
+        input.semester
+      )
+    )
+  ] as const;
+
+  const allValidations = ResultUtils.allTuple(validations);
   
-  const courseIdResult = CourseIdSchema.safeParse(input.courseId);
-  if (!courseIdResult.success) {
-    return left(createValidationError(
-      `Invalid course ID format: ${input.courseId}`,
-      'INVALID_COURSE_ID',
-      'courseId',
-      input.courseId
-    ));
-  }
-  
-  const semesterResult = SemesterSchema.safeParse(input.semester);
-  if (!semesterResult.success) {
-    return left(createValidationError(
-      `Invalid semester format: ${input.semester}. Expected format: YYYY-(spring|summer|fall)`,
-      'INVALID_SEMESTER',
-      'semester',
-      input.semester
-    ));
-  }
-  
-  return right({
-    studentId: studentIdResult.data,
-    courseId: courseIdResult.data,
-    semester: semesterResult.data
-  });
+  return ResultUtils.map(allValidations, ([studentId, courseId, semester]) => ({
+    studentId,
+    courseId,
+    semester
+  }));
 }
 
-// ビジネスルール適用
+// ビジネスルール適用（Result型使用）
 function applyBusinessRules(input: {
   studentId: StudentId;
   courseId: CourseId;
   semester: Semester;
-}): Either<EnrollmentError, void> {
+}): Result<void, EnrollmentError> {
   // 現在はRequestedStateのみなので、基本的なルールのみ
   // 将来の拡張ポイント:
   // - 申請期限チェック
@@ -208,8 +225,12 @@ function applyBusinessRules(input: {
   const semesterParts = input.semester.split('-');
   const semesterYear = parseInt(semesterParts[0] || '');
   
-  if (isNaN(semesterYear) || semesterYear < currentYear - 1 || semesterYear > currentYear + 1) {
-    return left(createBusinessRuleError(
+  return ResultUtils.when(
+    !isNaN(semesterYear) && 
+    semesterYear >= currentYear - 1 && 
+    semesterYear <= currentYear + 1,
+    () => Ok(undefined),
+    () => Err(createBusinessRuleError(
       'INVALID_SEMESTER_RANGE',
       `Cannot enroll for semester ${input.semester}. Only current and adjacent years are allowed.`,
       'SEMESTER_OUT_OF_RANGE',
@@ -218,10 +239,8 @@ function applyBusinessRules(input: {
         requestedYear: semesterYear,
         allowedRange: `${currentYear - 1} to ${currentYear + 1}`
       }
-    ));
-  }
-  
-  return right(undefined);
+    ))
+  );
 }
 
 // RequestedEnrollment作成

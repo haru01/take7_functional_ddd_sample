@@ -172,6 +172,283 @@ export namespace Result {
     if (!result.success) return result;
     return predicate(result.data) ? result : Err(errorOnFalse);
   };
+
+  /**
+   * 複数のResult型を並列処理し、全て成功した場合のみ成功
+   * タプル版 - 異なる型を組み合わせ可能
+   */
+  export const allTuple = <T extends readonly [...Result<any, any>[]]>(
+    results: T
+  ): Result<
+    { [K in keyof T]: T[K] extends Result<infer U, any> ? U : never },
+    T[number] extends Result<any, infer E> ? E : never
+  > => {
+    const data: any[] = [];
+    for (const result of results) {
+      if (!result.success) {
+        return result as any;
+      }
+      data.push(result.data);
+    }
+    return Ok(data as any);
+  };
+
+  /**
+   * 非同期Result型を並列実行
+   */
+  export const allAsync = async <T, E>(
+    promises: Promise<Result<T, E>>[]
+  ): Promise<Result<T[], E>> => {
+    const results = await Promise.all(promises);
+    return all(results);
+  };
+
+  /**
+   * 非同期Result型のタプル版
+   */
+  export const allTupleAsync = async <T extends readonly [...Promise<Result<any, any>>[]]>(
+    promises: T
+  ): Promise<Result<
+    { [K in keyof T]: T[K] extends Promise<Result<infer U, any>> ? U : never },
+    T[number] extends Promise<Result<any, infer E>> ? E : never
+  >> => {
+    const results = await Promise.all(promises);
+    return allTuple(results) as Result<
+      { [K in keyof T]: T[K] extends Promise<Result<infer U, any>> ? U : never },
+      T[number] extends Promise<Result<any, infer E>> ? E : never
+    >;
+  };
+
+  /**
+   * 最初に成功したResult型を返す（Alternativeパターン）
+   */
+  export const firstSuccess = <T, E>(
+    results: Result<T, E>[]
+  ): Result<T, E[]> => {
+    const errors: E[] = [];
+    for (const result of results) {
+      if (result.success) {
+        return result;
+      }
+      errors.push(result.error);
+    }
+    return Err(errors);
+  };
+
+  /**
+   * Zodスキーマを使った安全なパース
+   */
+  export const parseWith = <T, E = ZodParseError>(
+    schema: z.ZodSchema<T>,
+    data: unknown,
+    mapError?: (zodError: z.ZodError) => E
+  ): Result<T, E> => {
+    const parseResult = schema.safeParse(data);
+    if (parseResult.success) {
+      return Ok(parseResult.data);
+    }
+    const error = mapError 
+      ? mapError(parseResult.error)
+      : ({ type: 'VALIDATION_ERROR', zodError: parseResult.error } as any);
+    return Err(error);
+  };
+
+  /**
+   * 条件に応じてResult型を返す
+   */
+  export const when = <T, E>(
+    condition: boolean,
+    onTrue: () => Result<T, E>,
+    onFalse: () => Result<T, E>
+  ): Result<T, E> => {
+    return condition ? onTrue() : onFalse();
+  };
+
+  /**
+   * 非同期版の条件分岐
+   */
+  export const whenAsync = async <T, E>(
+    condition: boolean,
+    onTrue: () => Promise<Result<T, E>>,
+    onFalse: () => Promise<Result<T, E>>
+  ): Promise<Result<T, E>> => {
+    return condition ? await onTrue() : await onFalse();
+  };
+}
+
+// === パイプライン合成ユーティリティ ===
+
+/**
+ * 関数型パイプライン - 値を順次変換
+ */
+export function pipe<T>(initial: T): {
+  pipe<U>(fn: (value: T) => U): ReturnType<typeof pipe<U>>;
+  value(): T;
+} {
+  return {
+    pipe<U>(fn: (value: T) => U) {
+      return pipe(fn(initial));
+    },
+    value(): T {
+      return initial;
+    }
+  };
+}
+
+/**
+ * Result型専用パイプライン
+ */
+export function resultPipe<T, E>(initial: Result<T, E>) {
+  return {
+    map<U>(fn: (data: T) => U) {
+      return resultPipe(Result.map(initial, fn));
+    },
+    flatMap<U>(fn: (data: T) => Result<U, E>) {
+      return resultPipe(Result.flatMap(initial, fn));
+    },
+    mapError<F>(fn: (error: E) => F) {
+      return resultPipe(Result.mapError(initial, fn));
+    },
+    filter(predicate: (data: T) => boolean, errorOnFalse: E) {
+      return resultPipe(Result.filter(initial, predicate, errorOnFalse));
+    },
+    value(): Result<T, E> {
+      return initial;
+    }
+  };
+}
+
+/**
+ * 非同期Result型パイプライン
+ */
+export const asyncResultPipe = <T, E>(initial: Promise<Result<T, E>>) => {
+  return {
+    async map<U>(fn: (data: T) => U) {
+      const result = await initial;
+      return asyncResultPipe(Promise.resolve(Result.map(result, fn)));
+    },
+    async flatMap<U>(fn: (data: T) => Result<U, E>) {
+      const result = await initial;
+      return asyncResultPipe(Promise.resolve(Result.flatMap(result, fn)));
+    },
+    async flatMapAsync<U>(fn: (data: T) => Promise<Result<U, E>>) {
+      const result = await initial;
+      return asyncResultPipe(Result.flatMapAsync(result, fn));
+    },
+    async mapError<F>(fn: (error: E) => F) {
+      const result = await initial;
+      return asyncResultPipe(Promise.resolve(Result.mapError(result, fn)));
+    },
+    async value(): Promise<Result<T, E>> {
+      return await initial;
+    }
+  };
+};
+
+// === 高度な合成パターン ===
+
+export namespace AsyncResult {
+  /**
+   * 複数の非同期操作を順次実行（直列）
+   */
+  export const sequence = async <T, E>(
+    operations: Array<(prev?: any) => Promise<Result<T, E>>>
+  ): Promise<Result<T[], E>> => {
+    const results: T[] = [];
+    let previousResult: any = undefined;
+
+    for (const operation of operations) {
+      const result = await operation(previousResult);
+      if (!result.success) {
+        return result;
+      }
+      results.push(result.data);
+      previousResult = result.data;
+    }
+
+    return Ok(results);
+  };
+
+  /**
+   * 複数の非同期操作を並列実行
+   */
+  export const parallel = async <T, E>(
+    operations: Array<() => Promise<Result<T, E>>>
+  ): Promise<Result<T[], E>> => {
+    const promises = operations.map(op => op());
+    return Result.allAsync(promises);
+  };
+
+  /**
+   * レースコンディション - 最初に成功したものを採用
+   */
+  export const race = async <T, E>(
+    operations: Array<() => Promise<Result<T, E>>>
+  ): Promise<Result<T, E[]>> => {
+    const promises = operations.map(op => op());
+    const results = await Promise.allSettled(promises);
+    
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value.success) {
+        return result.value;
+      }
+    }
+
+    const errors: E[] = [];
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        if (!result.value.success) {
+          errors.push(result.value.error);
+        }
+      } else {
+        errors.push(result.reason as E);
+      }
+    }
+
+    return Err(errors);
+  };
+
+  /**
+   * リトライ機能付き非同期実行
+   */
+  export const retry = async <T, E>(
+    operation: () => Promise<Result<T, E>>,
+    options: {
+      maxAttempts: number;
+      delay?: (attempt: number) => number;
+      shouldRetry?: (error: E) => boolean;
+    }
+  ): Promise<Result<T, E>> => {
+    const { maxAttempts, delay = () => 1000, shouldRetry = () => true } = options;
+
+    let lastError: E | undefined;
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const result = await operation();
+      
+      if (result.success) {
+        return result;
+      }
+
+      lastError = result.error;
+      
+      if (attempt === maxAttempts || !shouldRetry(result.error)) {
+        return result;
+      }
+
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, delay(attempt)));
+      }
+    }
+
+    return Err(lastError!);
+  };
+}
+
+// === Zodエラー型定義 ===
+export interface ZodParseError {
+  type: 'VALIDATION_ERROR';
+  zodError: z.ZodError;
 }
 
 // === 後方互換性のためのEither型サポート（段階的移行用） ===
