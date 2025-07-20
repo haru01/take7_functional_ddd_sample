@@ -17,10 +17,10 @@ describe('InMemoryEnrollmentRepository', () => {
   describe('save', () => {
     test('新しい履修申請の保存', async () => {
       const domainResult = requestEnrollment('ST001', 'CS101', '2025-spring');
-      expect(domainResult.type).toBe('right');
+      expect(domainResult.success).toBe(true);
       
-      if (domainResult.type === 'right') {
-        const { domainEvent, ...enrollment } = domainResult.value;
+      if (domainResult.success) {
+        const { domainEvent, ...enrollment } = domainResult.data;
         
         const result = await repository.save(enrollment, domainEvent);
         
@@ -33,15 +33,15 @@ describe('InMemoryEnrollmentRepository', () => {
     test('楽観的ロック：バージョン不一致でエラー', async () => {
       // 最初の保存
       const firstResult = requestEnrollment('ST001', 'CS101', '2025-spring');
-      if (firstResult.type === 'right') {
-        const { domainEvent, ...enrollment } = firstResult.value;
+      if (firstResult.success) {
+        const { domainEvent, ...enrollment } = firstResult.data;
         await repository.save(enrollment, domainEvent);
       }
 
       // 同じバージョンで再保存を試行
       const secondResult = requestEnrollment('ST001', 'CS101', '2025-spring');
-      if (secondResult.type === 'right') {
-        const { domainEvent, ...enrollment } = secondResult.value;
+      if (secondResult.success) {
+        const { domainEvent, ...enrollment } = secondResult.data;
         const result = await repository.save(enrollment, domainEvent);
         
         expect(result.success).toBe(false);
@@ -115,8 +115,8 @@ describe('InMemoryEnrollmentRepository', () => {
   describe('getEventStream', () => {
     test('イベントストリームの取得', async () => {
       const domainResult = requestEnrollment('ST001', 'CS101', '2025-spring');
-      if (domainResult.type === 'right') {
-        const { domainEvent, ...enrollment } = domainResult.value;
+      if (domainResult.success) {
+        const { domainEvent, ...enrollment } = domainResult.data;
         await repository.save(enrollment, domainEvent);
       }
 
@@ -142,8 +142,8 @@ describe('InMemoryEnrollmentRepository', () => {
 
     test('イベントストリームの不変性', async () => {
       const domainResult = requestEnrollment('ST001', 'CS101', '2025-spring');
-      if (domainResult.type === 'right') {
-        const { domainEvent, ...enrollment } = domainResult.value;
+      if (domainResult.success) {
+        const { domainEvent, ...enrollment } = domainResult.data;
         await repository.save(enrollment, domainEvent);
       }
 
@@ -164,8 +164,8 @@ describe('InMemoryEnrollmentRepository', () => {
   describe('テスト用ヘルパーメソッド', () => {
     test('clear機能', async () => {
       const domainResult = requestEnrollment('ST001', 'CS101', '2025-spring');
-      if (domainResult.type === 'right') {
-        const { domainEvent, ...enrollment } = domainResult.value;
+      if (domainResult.success) {
+        const { domainEvent, ...enrollment } = domainResult.data;
         await repository.save(enrollment, domainEvent);
       }
 
@@ -190,8 +190,8 @@ describe('InMemoryEnrollmentRepository', () => {
       ];
 
       for (const result of enrollments) {
-        if (result.type === 'right') {
-          const { domainEvent, ...enrollment } = result.value;
+        if (result.success) {
+          const { domainEvent, ...enrollment } = result.data;
           await repository.save(enrollment, domainEvent);
         }
       }

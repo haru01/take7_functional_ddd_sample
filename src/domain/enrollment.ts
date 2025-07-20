@@ -3,7 +3,6 @@ import {
   type CourseId,
   type Semester,
   type RequestedEnrollment,
-  type EnrollmentError,
   type Result,
   StudentIdSchema,
   CourseIdSchema,
@@ -13,6 +12,7 @@ import {
   Result as ResultUtils,
   resultPipe
 } from './types.js';
+import { type EnrollmentError, createValidationError } from './errors.js';
 
 /**
  * 履修申請の作成（Result型使用版）
@@ -59,26 +59,32 @@ function validateEnrollmentInputs(inputs: {
     ResultUtils.parseWith(
       StudentIdSchema,
       inputs.studentId,
-      () => ({
-        type: 'VALIDATION_ERROR' as const,
-        message: `Invalid student ID: ${inputs.studentId}`
-      })
+      () => createValidationError(
+        `Invalid student ID: ${inputs.studentId}`,
+        'INVALID_STUDENT_ID',
+        'studentId',
+        inputs.studentId
+      )
     ),
     ResultUtils.parseWith(
       CourseIdSchema,
       inputs.courseId,
-      () => ({
-        type: 'VALIDATION_ERROR' as const,
-        message: `Invalid course ID: ${inputs.courseId}`
-      })
+      () => createValidationError(
+        `Invalid course ID: ${inputs.courseId}`,
+        'INVALID_COURSE_ID',
+        'courseId',
+        inputs.courseId
+      )
     ),
     ResultUtils.parseWith(
       SemesterSchema,
       inputs.semester,
-      () => ({
-        type: 'VALIDATION_ERROR' as const,
-        message: `Invalid semester: ${inputs.semester}`
-      })
+      () => createValidationError(
+        `Invalid semester: ${inputs.semester}`,
+        'INVALID_SEMESTER',
+        'semester',
+        inputs.semester
+      )
     )
   ] as const;
 
@@ -111,9 +117,9 @@ function createEnrollmentFromValidatedInputs(validatedInputs: {
 
     return Ok(enrollment);
   } catch (error) {
-    return Err({
-      type: 'VALIDATION_ERROR' as const,
-      message: `Failed to create enrollment: ${error}`
-    });
+    return Err(createValidationError(
+      `Failed to create enrollment: ${error}`,
+      'ENROLLMENT_CREATION_FAILED'
+    ));
   }
 }

@@ -298,7 +298,7 @@ export function pipe<T>(initial: T): {
 /**
  * Result型専用パイプライン
  */
-export function resultPipe<T, E>(initial: Result<T, E>) {
+export function resultPipe<T, E>(initial: Result<T, E>): any {
   return {
     map<U>(fn: (data: T) => U) {
       return resultPipe(Result.map(initial, fn));
@@ -321,7 +321,7 @@ export function resultPipe<T, E>(initial: Result<T, E>) {
 /**
  * 非同期Result型パイプライン
  */
-export const asyncResultPipe = <T, E>(initial: Promise<Result<T, E>>) => {
+export const asyncResultPipe = <T, E>(initial: Promise<Result<T, E>>): any => {
   return {
     async map<U>(fn: (data: T) => U) {
       const result = await initial;
@@ -531,9 +531,4 @@ export type ApprovedEnrollment = z.infer<typeof ApprovedEnrollmentSchema>;
 export type CancelledEnrollment = z.infer<typeof CancelledEnrollmentSchema>;
 export type Enrollment = z.infer<typeof EnrollmentSchema>;
 
-export type EnrollmentError =
-  | { type: 'ALREADY_ENROLLED'; message: string }
-  | { type: 'COURSE_NOT_FOUND'; message: string }
-  | { type: 'STUDENT_NOT_FOUND'; message: string }
-  | { type: 'INVALID_SEMESTER'; message: string }
-  | { type: 'VALIDATION_ERROR'; message: string };
+// EnrollmentError型は errors.ts で定義されています

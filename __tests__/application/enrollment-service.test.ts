@@ -56,14 +56,14 @@ describe('履修申請アプリケーションサービス', () => {
 
       const result = await service.requestEnrollment(command);
 
-      expect(result.type).toBe('right');
-      if (result.type === 'right') {
+      expect(result.success).toBe(true);
+      if (result.success) {
         // レスポンスの検証
-        expect(result.value.studentId).toBe('ST001');
-        expect(result.value.courseId).toBe('CS101');
-        expect(result.value.semester).toBe('2025-spring');
-        expect(result.value.status).toBe('requested');
-        expect(result.value.version).toBe(1);
+        expect(result.data.studentId).toBe('ST001');
+        expect(result.data.courseId).toBe('CS101');
+        expect(result.data.semester).toBe('2025-spring');
+        expect(result.data.status).toBe('requested');
+        expect(result.data.version).toBe(1);
 
         // 永続化の確認
         expect(enrollmentRepo.getEnrollmentCount()).toBe(1);
@@ -92,7 +92,7 @@ describe('履修申請アプリケーションサービス', () => {
 
       const result = await service.requestEnrollment(command);
 
-      expect(result.type).toBe('right');
+      expect(result.success).toBe(true);
       
       const publishedEvents = eventPublisher.getAllEvents();
       expect(publishedEvents[0].correlationId).toBe(command.correlationId);
@@ -109,9 +109,9 @@ describe('履修申請アプリケーションサービス', () => {
 
         const result = await service.requestEnrollment(invalidCommand);
 
-        expect(result.type).toBe('left');
-        if (result.type === 'left') {
-          expect(result.value.code).toBe('INVALID_COMMAND_FORMAT');
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe('INVALID_COMMAND_FORMAT');
         }
       });
     });
@@ -128,9 +128,9 @@ describe('履修申請アプリケーションサービス', () => {
 
         const result = await service.requestEnrollment(command);
 
-        expect(result.type).toBe('left');
-        if (result.type === 'left') {
-          expect(result.value.code).toBe('STUDENT_NOT_FOUND');
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe('STUDENT_NOT_FOUND');
         }
       });
 
@@ -145,9 +145,9 @@ describe('履修申請アプリケーションサービス', () => {
 
         const result = await service.requestEnrollment(command);
 
-        expect(result.type).toBe('left');
-        if (result.type === 'left') {
-          expect(result.value.code).toBe('STUDENT_NOT_ACTIVE');
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe('STUDENT_NOT_ACTIVE');
         }
       });
 
@@ -162,9 +162,9 @@ describe('履修申請アプリケーションサービス', () => {
 
         const result = await service.requestEnrollment(command);
 
-        expect(result.type).toBe('left');
-        if (result.type === 'left') {
-          expect(result.value.code).toBe('COURSE_NOT_FOUND');
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe('COURSE_NOT_FOUND');
         }
       });
 
@@ -186,9 +186,9 @@ describe('履修申請アプリケーションサービス', () => {
 
         const result = await service.requestEnrollment(command);
 
-        expect(result.type).toBe('left');
-        if (result.type === 'left') {
-          expect(result.value.code).toBe('COURSE_NOT_OFFERED');
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe('COURSE_NOT_OFFERED');
         }
       });
 
@@ -210,9 +210,9 @@ describe('履修申請アプリケーションサービス', () => {
 
         const result = await service.requestEnrollment(command);
 
-        expect(result.type).toBe('left');
-        if (result.type === 'left') {
-          expect(result.value.code).toBe('COURSE_CAPACITY_EXCEEDED');
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe('COURSE_CAPACITY_EXCEEDED');
         }
       });
     });
@@ -227,13 +227,13 @@ describe('履修申請アプリケーションサービス', () => {
         };
 
         const firstResult = await service.requestEnrollment(command);
-        expect(firstResult.type).toBe('right');
+        expect(firstResult.success).toBe(true);
 
         // 同じ申請を再実行
         const secondResult = await service.requestEnrollment(command);
-        expect(secondResult.type).toBe('left');
-        if (secondResult.type === 'left') {
-          expect(secondResult.value.code).toBe('DUPLICATE_ENROLLMENT');
+        expect(secondResult.success).toBe(false);
+        if (!secondResult.success) {
+          expect(secondResult.error.code).toBe('DUPLICATE_ENROLLMENT');
         }
       });
     });
@@ -251,21 +251,21 @@ describe('履修申請アプリケーションサービス', () => {
 
       const result = await service.getEnrollment('ST001', 'CS101', '2025-spring');
 
-      expect(result.type).toBe('right');
-      if (result.type === 'right' && result.value) {
-        expect(result.value.studentId).toBe('ST001');
-        expect(result.value.courseId).toBe('CS101');
-        expect(result.value.semester).toBe('2025-spring');
-        expect(result.value.status).toBe('requested');
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        expect(result.data.studentId).toBe('ST001');
+        expect(result.data.courseId).toBe('CS101');
+        expect(result.data.semester).toBe('2025-spring');
+        expect(result.data.status).toBe('requested');
       }
     });
 
     test('存在しない履修申請の取得', async () => {
       const result = await service.getEnrollment('ST999', 'CS999', '2025-spring');
 
-      expect(result.type).toBe('right');
-      if (result.type === 'right') {
-        expect(result.value).toBeNull();
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toBeNull();
       }
     });
   });

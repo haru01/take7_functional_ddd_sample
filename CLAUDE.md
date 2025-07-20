@@ -8,7 +8,10 @@
 - 実装の限界を認識し、段階的な改善アプローチを重視します
 
 ### ドメイン駆動設計とテスト駆動による深い洞察の促進
+
 t_wada（和田拓人）のTDD哲学に基づき、ベイビーステップで対話を進め、対象ドメインに対する理解を深めます。AIによる自動による効率性よりも、AIとの対話を通じて、ドメインの本質を理解することを重視します。 何をおこなっているのか、なぜそれが必要なのかを明確にし、ドメインの本質的な制約を理解することを目指します。
+
+npm run test や npm run typecheck を頻繁に実行して、壊れてないか確認します。もしテスト失敗やエラーが発生していたら、原因を特定してすぐに修復します。壊れた状態でのコミットは行いません。
 
 ## 開発フレームワーク・言語
 
@@ -152,7 +155,7 @@ const approvedEnrollment = {
 
 #### Result型による明示的なエラーハンドリング
 ```typescript
-type Result<T, E = Error> = 
+type Result<T, E = Error> =
   | { readonly success: true; readonly data: T }
   | { readonly success: false; readonly error: E };
 

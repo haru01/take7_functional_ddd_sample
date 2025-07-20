@@ -1,7 +1,7 @@
-import type { Either } from '../../domain/types.js';
+import type { Result } from '../../domain/types.js';
 import type { EnrollmentError } from '../../domain/errors.js';
 import type { EnrollmentDomainEvent } from '../../domain/domain-events.js';
-import { right } from '../../domain/types.js';
+import { Ok } from '../../domain/types.js';
 
 import type { 
   INotificationService,
@@ -22,7 +22,7 @@ export class MockNotificationService implements INotificationService {
 
   async notifyEnrollmentRequested(
     event: EnrollmentDomainEvent
-  ): Promise<Either<EnrollmentError, void>> {
+  ): Promise<Result<void, EnrollmentError>> {
     // 通知の記録（テスト検証用）
     this.sentNotifications.push({
       event,
@@ -35,7 +35,7 @@ export class MockNotificationService implements INotificationService {
     // - SMS送信
     // など
 
-    return right(undefined);
+    return Ok(undefined);
   }
 
   // === テスト用ヘルパーメソッド ===
@@ -82,7 +82,7 @@ export class MockEventPublisher implements IEventPublisher {
 
   async publish(
     events: EnrollmentDomainEvent[]
-  ): Promise<Either<EnrollmentError, void>> {
+  ): Promise<Result<void, EnrollmentError>> {
     // イベントの記録（テスト検証用）
     this.publishedEvents.push({
       events: [...events], // コピーを保存
@@ -96,7 +96,7 @@ export class MockEventPublisher implements IEventPublisher {
     // - 他のマイクロサービスへのHTTP通知
     // など
 
-    return right(undefined);
+    return Ok(undefined);
   }
 
   // === テスト用ヘルパーメソッド ===

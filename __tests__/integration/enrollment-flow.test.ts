@@ -108,7 +108,7 @@ describe('履修管理システム統合テスト', () => {
       // 全ての申請を処理
       for (const command of commands) {
         const result = await service.requestEnrollment(command);
-        expect(result.type).toBe('right');
+        expect(result.success).toBe(true);
       }
 
       // 結果の検証
@@ -150,7 +150,7 @@ describe('履修管理システム統合テスト', () => {
 
       for (const command of commands) {
         const result = await service.requestEnrollment(command);
-        expect(result.type).toBe('right');
+        expect(result.success).toBe(true);
       }
 
       // ST001の履修申請を確認
@@ -158,12 +158,12 @@ describe('履修管理システム統合テスト', () => {
       const cs201Spring = await service.getEnrollment('ST001', 'CS201', '2025-spring');
       const cs101Fall = await service.getEnrollment('ST001', 'CS101', '2025-fall');
 
-      expect(cs101Spring.type).toBe('right');
-      expect(cs201Spring.type).toBe('right');
-      expect(cs101Fall.type).toBe('right');
+      expect(cs101Spring.success).toBe(true);
+      expect(cs201Spring.success).toBe(true);
+      expect(cs101Fall.success).toBe(true);
 
-      if (cs101Spring.type === 'right' && cs101Spring.value) {
-        expect(cs101Spring.value.status).toBe('requested');
+      if (cs101Spring.success && cs101Spring.data) {
+        expect(cs101Spring.data.status).toBe('requested');
       }
     });
   });
@@ -178,9 +178,9 @@ describe('履修管理システム統合テスト', () => {
 
       const result = await service.requestEnrollment(command);
 
-      expect(result.type).toBe('left');
-      if (result.type === 'left') {
-        expect(result.value.code).toBe('STUDENT_NOT_ACTIVE');
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe('STUDENT_NOT_ACTIVE');
       }
 
       // 副作用が発生していないことを確認
@@ -206,7 +206,7 @@ describe('履修管理システム統合テスト', () => {
 
       // 1人目は成功
       const firstResult = await service.requestEnrollment(commands[0]);
-      expect(firstResult.type).toBe('right');
+      expect(firstResult.success).toBe(true);
 
       // 定員更新をシミュレート（本来はDBトリガーや別の仕組みで）
       courseRepo.setCourseData('CS201', true, [
@@ -220,9 +220,9 @@ describe('履修管理システム統合テスト', () => {
 
       // 2人目は失敗
       const secondResult = await service.requestEnrollment(commands[1]);
-      expect(secondResult.type).toBe('left');
-      if (secondResult.type === 'left') {
-        expect(secondResult.value.code).toBe('COURSE_CAPACITY_EXCEEDED');
+      expect(secondResult.success).toBe(false);
+      if (!secondResult.success) {
+        expect(secondResult.error.code).toBe('COURSE_CAPACITY_EXCEEDED');
       }
 
       // 1つだけ成功していることを確認
@@ -239,13 +239,13 @@ describe('履修管理システム統合テスト', () => {
 
       // 1回目は成功
       const firstResult = await service.requestEnrollment(command);
-      expect(firstResult.type).toBe('right');
+      expect(firstResult.success).toBe(true);
 
       // 2回目は失敗
       const secondResult = await service.requestEnrollment(command);
-      expect(secondResult.type).toBe('left');
-      if (secondResult.type === 'left') {
-        expect(secondResult.value.code).toBe('DUPLICATE_ENROLLMENT');
+      expect(secondResult.success).toBe(false);
+      if (!secondResult.success) {
+        expect(secondResult.error.code).toBe('DUPLICATE_ENROLLMENT');
       }
 
       // 重複は作成されていないことを確認
@@ -262,9 +262,9 @@ describe('履修管理システム統合テスト', () => {
 
       const result = await service.requestEnrollment(command);
 
-      expect(result.type).toBe('left');
-      if (result.type === 'left') {
-        expect(result.value.code).toBe('COURSE_NOT_OFFERED');
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe('COURSE_NOT_OFFERED');
       }
     });
   });
@@ -301,20 +301,18 @@ describe('履修管理システム統合テスト', () => {
 
       for (const command of commands) {
         const result = await service.requestEnrollment(command);
-        if (result.type === 'right') {
+        if (result.success) {
           successCount++;
         } else {
           failureCount++;
           
           // 失敗理由の確認（重複申請エラーであることを期待）
-          if (result.type === 'left') {
-            expect(['DUPLICATE_ENROLLMENT', 'COURSE_CAPACITY_EXCEEDED']).toContain(result.value.code);
-          }
+          expect(['DUPLICATE_ENROLLMENT', 'COURSE_CAPACITY_EXCEEDED']).toContain(result.error.code);
         }
       }
 
-      // 一意性が保たれていることを確認
-      expect(successCount).toBe(100); // インメモリ実装では並行制御がないため全て成功
+      // 現在の実装では動的な定員チェックは未実装のため全員成功
+      expect(successCount).toBe(100); // TODO: 動的定員チェック実装後は30に変更
       expect(enrollmentRepo.getEnrollmentCount()).toBe(100);
       expect(eventPublisher.getAllEvents()).toHaveLength(100);
     });
@@ -342,10 +340,10 @@ describe('履修管理システム統合テスト', () => {
           command.semester
         );
         
-        expect(eventStreamResult.type).toBe('right');
-        if (eventStreamResult.type === 'right') {
-          expect(eventStreamResult.value).toHaveLength(1);
-          expect(eventStreamResult.value[0].eventType).toBe('EnrollmentRequested');
+        expect(eventStreamResult.success).toBe(true);
+        if (eventStreamResult.success) {
+          expect(eventStreamResult.data).toHaveLength(1);
+          expect(eventStreamResult.data[0].eventType).toBe('EnrollmentRequested');
         }
       }
     });

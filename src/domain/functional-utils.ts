@@ -6,7 +6,6 @@
 
 import {
   type Result,
-  type EnrollmentError,
   type RequestedEnrollment,
   type StudentId,
   type CourseId,
@@ -19,7 +18,8 @@ import {
   AsyncResult
 } from './types.js';
 
-import { requestEnrollment } from './enrollment.js';
+import { requestEnrollment } from './enrollment-aggregate.js';
+import { createBusinessRuleError, type EnrollmentError } from './errors.js';
 
 // === 複数の履修申請を処理する実用例 ===
 
@@ -37,9 +37,9 @@ export async function processMultipleEnrollments(
   const enrollmentResults = await AsyncResult.parallel(
     enrollmentRequests.map(request => async () => {
       // 各申請を個別に処理
-      return Promise.resolve(
-        requestEnrollment(request.studentId, request.courseId, request.semester)
-      );
+      const result = requestEnrollment(request.studentId, request.courseId, request.semester);
+      // ドメインイベントを除いてRequestedEnrollmentのみを返す
+      return ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment);
     })
   );
 
@@ -68,25 +68,29 @@ export function requestEnrollmentWithFallback(
     primaryRequest.semester
   );
 
-  if (primaryResult.success) {
-    return primaryResult;
+  // ドメインイベントを除いてRequestedEnrollmentのみを扱う
+  const primaryResultWithoutEvent = ResultUtils.map(primaryResult, ({ domainEvent, ...enrollment }) => enrollment);
+
+  if (primaryResultWithoutEvent.success) {
+    return primaryResultWithoutEvent;
   }
 
   // フォールバック候補で再試行
-  const fallbackResults = fallbackCourseIds.map(fallbackCourseId =>
-    requestEnrollment(
+  const fallbackResults = fallbackCourseIds.map(fallbackCourseId => {
+    const result = requestEnrollment(
       primaryRequest.studentId,
       fallbackCourseId,
       primaryRequest.semester
-    )
-  );
+    );
+    return ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment);
+  });
 
   // 最初に成功したものを返す
   const firstSuccess = ResultUtils.firstSuccess(fallbackResults);
   
   return ResultUtils.match(firstSuccess, {
     success: (enrollment) => Ok(enrollment),
-    error: (errors) => Err([primaryResult.error, ...errors])
+    error: (errors) => Err([primaryResultWithoutEvent.error, ...errors])
   });
 }
 
@@ -117,11 +121,16 @@ export async function conditionalEnrollmentProcessing(
       
       return ResultUtils.when(
         allConditionsMet || false,
-        () => requestEnrollment(studentId, courseId, semester),
-        () => Err({
-          type: 'BUSINESS_RULE_VIOLATION' as const,
-          message: `Enrollment conditions not met: prereq=${prereqOk}, capacity=${capacityOk}, schedule=${scheduleOk}`
-        })
+        () => {
+          const result = requestEnrollment(studentId, courseId, semester);
+          return ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment);
+        },
+        () => Err(createBusinessRuleError(
+          'ENROLLMENT_CONDITIONS_NOT_MET',
+          `Enrollment conditions not met: prereq=${prereqOk}, capacity=${capacityOk}, schedule=${scheduleOk}`,
+          'ENROLLMENT_CONDITIONS_NOT_MET',
+          { prereqOk, capacityOk, scheduleOk }
+        ))
       );
     },
     error: (error) => Err(error)
@@ -144,8 +153,9 @@ export async function requestEnrollmentWithRetry(
   return AsyncResult.retry(
     async () => {
       // 非同期操作として履修申請を実行
+      const result = requestEnrollment(studentId, courseId, semester);
       return Promise.resolve(
-        requestEnrollment(studentId, courseId, semester)
+        ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment)
       );
     },
     {
@@ -178,8 +188,9 @@ export async function processEnrollmentBatch(
       console.log(`Processing enrollment for student ${request.studentId}, course ${request.courseId}`);
       console.log(`Previous results count: ${previousResults?.length || 0}`);
       
+      const result = requestEnrollment(request.studentId, request.courseId, request.semester);
       return Promise.resolve(
-        requestEnrollment(request.studentId, request.courseId, request.semester)
+        ResultUtils.map(result, ({ domainEvent, ...enrollment }) => enrollment)
       );
     })
   );
@@ -208,7 +219,10 @@ export async function advancedEnrollmentProcessing(
     // メインの学期
     allAttempts.push(
       Promise.resolve(
-        requestEnrollment(studentId, option.courseId, option.semester)
+        ResultUtils.map(
+          requestEnrollment(studentId, option.courseId, option.semester),
+          ({ domainEvent, ...enrollment }) => enrollment
+        )
       )
     );
 
@@ -217,7 +231,10 @@ export async function advancedEnrollmentProcessing(
       for (const altSemester of option.alternativeSemesters) {
         allAttempts.push(
           Promise.resolve(
-            requestEnrollment(studentId, option.courseId, altSemester)
+            ResultUtils.map(
+              requestEnrollment(studentId, option.courseId, altSemester),
+              ({ domainEvent, ...enrollment }) => enrollment
+            )
           )
         );
       }

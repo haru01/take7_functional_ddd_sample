@@ -27,7 +27,7 @@ describe('履修申請 (Result型版)', () => {
     
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.type).toBe('VALIDATION_ERROR');
+      expect(result.error.type).toBe('ValidationError');
       expect(result.error.message).toContain('Invalid student ID');
     }
   });
@@ -37,7 +37,7 @@ describe('履修申請 (Result型版)', () => {
     
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.type).toBe('VALIDATION_ERROR');
+      expect(result.error.type).toBe('ValidationError');
       expect(result.error.message).toContain('Invalid course ID');
     }
   });
@@ -47,7 +47,7 @@ describe('履修申請 (Result型版)', () => {
     
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.type).toBe('VALIDATION_ERROR');
+      expect(result.error.type).toBe('ValidationError');
       expect(result.error.message).toContain('Invalid semester');
     }
   });

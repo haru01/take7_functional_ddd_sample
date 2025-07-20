@@ -1,6 +1,6 @@
 import type { Result } from '../domain/types.js';
 import type { EnrollmentError } from '../domain/errors.js';
-import { createBusinessRuleError } from '../domain/errors.js';
+import { createBusinessRuleError, createNotFoundError } from '../domain/errors.js';
 import { requestEnrollment } from '../domain/enrollment-aggregate.js';
 import { Ok, Err, Result as ResultUtils, resultToEither } from '../domain/types.js';
 
@@ -168,17 +168,77 @@ export class EnrollmentApplicationService {
     courseId: string,
     semester: string
   ): Promise<Result<void, EnrollmentError>> {
-    // 簡略化した実装（テスト用）
-    // 実際の実装では各Repository呼び出しを Result型で処理
-    try {
-      return Ok(undefined);
-    } catch (error) {
+    // 学生の存在確認
+    const studentExistsResult = await this.studentRepository.exists(studentId as any);
+    if (!studentExistsResult.success) {
+      return studentExistsResult;
+    }
+    if (!studentExistsResult.data) {
       return Err(createBusinessRuleError(
-        'PREREQUISITE_CHECK_FAILED',
-        `Failed to check prerequisites: ${error}`,
-        'PREREQUISITE_ERROR'
+        'STUDENT_NOT_FOUND',
+        `Student ${studentId} not found`,
+        'STUDENT_NOT_FOUND',
+        { studentId }
       ));
     }
+
+    // 学生の在籍状況確認
+    const studentStatusResult = await this.studentRepository.getEnrollmentStatus(studentId as any);
+    if (!studentStatusResult.success) {
+      return studentStatusResult;
+    }
+    if (studentStatusResult.data !== 'active') {
+      return Err(createBusinessRuleError(
+        'STUDENT_NOT_ACTIVE',
+        `Student ${studentId} is not active (status: ${studentStatusResult.data})`,
+        'STUDENT_NOT_ACTIVE',
+        { studentId, status: studentStatusResult.data }
+      ));
+    }
+
+    // 科目の存在確認
+    const courseExistsResult = await this.courseRepository.exists(courseId as any);
+    if (!courseExistsResult.success) {
+      return courseExistsResult;
+    }
+    if (!courseExistsResult.data) {
+      return Err(createBusinessRuleError(
+        'COURSE_NOT_FOUND',
+        `Course ${courseId} not found`,
+        'COURSE_NOT_FOUND',
+        { courseId }
+      ));
+    }
+
+    // 科目の開講状況確認
+    const courseOfferedResult = await this.courseRepository.isOfferedInSemester(courseId as any, semester as any);
+    if (!courseOfferedResult.success) {
+      return courseOfferedResult;
+    }
+    if (!courseOfferedResult.data) {
+      return Err(createBusinessRuleError(
+        'COURSE_NOT_OFFERED',
+        `Course ${courseId} is not offered in semester ${semester}`,
+        'COURSE_NOT_OFFERED',
+        { courseId, semester }
+      ));
+    }
+
+    // 定員確認
+    const capacityResult = await this.courseRepository.getCapacity(courseId as any, semester as any);
+    if (!capacityResult.success) {
+      return capacityResult;
+    }
+    if (capacityResult.data.current >= capacityResult.data.max) {
+      return Err(createBusinessRuleError(
+        'COURSE_CAPACITY_EXCEEDED',
+        `Course ${courseId} has reached maximum capacity (${capacityResult.data.max})`,
+        'COURSE_CAPACITY_EXCEEDED',
+        { courseId, semester, capacity: capacityResult.data }
+      ));
+    }
+
+    return Ok(undefined);
   }
 
   /**
