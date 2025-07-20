@@ -1,18 +1,21 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { EnrollmentApplicationService } from '../../src/application/enrollment-service.js';
-import type { RequestEnrollmentCommand } from '../../src/application/dtos.js';
+import { RequestEnrollmentCommandHandler } from '../../src/contexts/enrollment/application/commands/index';
+import { GetEnrollmentQueryHandler } from '../../src/contexts/enrollment/application/queries/index';
+import type { RequestEnrollmentCommand } from '../../src/contexts/enrollment/application/commands/index';
+import type { GetEnrollmentQuery } from '../../src/contexts/enrollment/application/queries/index';
 import {
   InMemoryEnrollmentRepository,
   MockStudentRepository,
   MockCourseRepository
-} from '../../src/infrastructure/repositories/enrollment-repository.js';
+} from '../../src/contexts/enrollment/infrastructure/repositories/enrollment-repository';
 import {
   MockNotificationService,
   MockEventPublisher
-} from '../../src/infrastructure/services/mock-services.js';
+} from '../../src/contexts/enrollment/infrastructure/adapters/services/mock-services';
 
-describe('履修申請アプリケーションサービス (Result型)', () => {
-  let service: EnrollmentApplicationService;
+describe('履修申請コマンドハンドラー (Result型)', () => {
+  let commandHandler: RequestEnrollmentCommandHandler;
+  let queryHandler: GetEnrollmentQueryHandler;
   let enrollmentRepo: InMemoryEnrollmentRepository;
   let studentRepo: MockStudentRepository;
   let courseRepo: MockCourseRepository;
@@ -26,12 +29,16 @@ describe('履修申請アプリケーションサービス (Result型)', () => {
     notificationService = new MockNotificationService();
     eventPublisher = new MockEventPublisher();
 
-    service = new EnrollmentApplicationService(
+    commandHandler = new RequestEnrollmentCommandHandler(
       enrollmentRepo,
       studentRepo,
       courseRepo,
       notificationService,
       eventPublisher
+    );
+
+    queryHandler = new GetEnrollmentQueryHandler(
+      enrollmentRepo
     );
   });
 
@@ -54,7 +61,7 @@ describe('履修申請アプリケーションサービス (Result型)', () => {
         semester: '2025-spring'
       };
 
-      const result = await service.requestEnrollment(command);
+      const result = await commandHandler.handle(command);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -97,7 +104,7 @@ describe('履修申請アプリケーションサービス (Result型)', () => {
         metadata: { source: 'mobile-app', version: '1.2.3' }
       };
 
-      const result = await service.requestEnrollment(command);
+      const result = await commandHandler.handle(command);
       
       expect(result.success).toBe(true);
       
@@ -114,7 +121,7 @@ describe('履修申請アプリケーションサービス (Result型)', () => {
           semester: '2025-spring'
         } as RequestEnrollmentCommand;
 
-        const result = await service.requestEnrollment(invalidCommand);
+        const result = await commandHandler.handle(invalidCommand);
 
         expect(result.success).toBe(false);
         if (!result.success) {
@@ -135,7 +142,7 @@ describe('履修申請アプリケーションサービス (Result型)', () => {
         semester: '2025-spring'
       };
 
-      const result = await service.requestEnrollment(command);
+      const result = await commandHandler.handle(command);
 
       expect(result.success).toBe(false); // 存在しない学生のため失敗する
       if (!result.success) {
@@ -158,11 +165,12 @@ describe('履修申請アプリケーションサービス (Result型)', () => {
         semester: '2025-spring'
       };
 
-      const createResult = await service.requestEnrollment(command);
+      const createResult = await commandHandler.handle(command);
       expect(createResult.success).toBe(true);
 
       // 取得テスト
-      const result = await service.getEnrollment('ST001', 'CS101', '2025-spring');
+      const getQuery: GetEnrollmentQuery = { studentId: 'ST001', courseId: 'CS101', semester: '2025-spring' };
+      const result = await queryHandler.handle(getQuery);
 
       expect(result.success).toBe(true);
       if (result.success && result.data) {
@@ -174,7 +182,8 @@ describe('履修申請アプリケーションサービス (Result型)', () => {
     });
 
     test('存在しない履修申請の取得', async () => {
-      const result = await service.getEnrollment('ST999', 'CS999', '2025-spring');
+      const query: GetEnrollmentQuery = { studentId: 'ST999', courseId: 'CS999', semester: '2025-spring' };
+      const result = await queryHandler.handle(query);
 
       expect(result.success).toBe(true);
       if (result.success) {

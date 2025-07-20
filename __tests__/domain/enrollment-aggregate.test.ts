@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
-import { requestEnrollment, reconstructEnrollmentFromEvents } from '../../src/domain/enrollment-aggregate.js';
-import { isValidationError, isBusinessRuleError } from '../../src/domain/errors.js';
-import { createEnrollmentRequestedEvent } from '../../src/domain/domain-events.js';
+import { requestEnrollment, reconstructEnrollmentFromEvents } from '../../src/contexts/enrollment/domain/aggregates/enrollment-aggregate';
+import { isValidationError, isBusinessRuleError } from '../../src/contexts/enrollment/domain/errors/errors';
+import { createEnrollmentRequestedEvent } from '../../src/contexts/enrollment/domain/events/domain-events';
 
 describe('履修申請集約', () => {
   describe('requestEnrollment', () => {

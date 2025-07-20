@@ -1,18 +1,21 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { EnrollmentApplicationService } from '../../src/application/enrollment-service.js';
+import { RequestEnrollmentCommandHandler } from '../../src/contexts/enrollment/application/commands/index';
+import { GetEnrollmentQueryHandler } from '../../src/contexts/enrollment/application/queries/index';
 import {
   InMemoryEnrollmentRepository,
   MockStudentRepository,
   MockCourseRepository
-} from '../../src/infrastructure/repositories/enrollment-repository.js';
+} from '../../src/contexts/enrollment/infrastructure/repositories/enrollment-repository';
 import {
   MockNotificationService,
   MockEventPublisher
-} from '../../src/infrastructure/services/mock-services.js';
-import type { RequestEnrollmentCommand } from '../../src/application/dtos.js';
+} from '../../src/contexts/enrollment/infrastructure/adapters/services/mock-services';
+import type { RequestEnrollmentCommand } from '../../src/contexts/enrollment/application/commands/index';
+import type { GetEnrollmentQuery } from '../../src/contexts/enrollment/application/queries/index';
 
-describe('履修管理システム統合テスト', () => {
-  let service: EnrollmentApplicationService;
+describe('履修管理システム統合テスト (CQRS)', () => {
+  let commandHandler: RequestEnrollmentCommandHandler;
+  let queryHandler: GetEnrollmentQueryHandler;
   let enrollmentRepo: InMemoryEnrollmentRepository;
   let studentRepo: MockStudentRepository;
   let courseRepo: MockCourseRepository;
@@ -27,12 +30,16 @@ describe('履修管理システム統合テスト', () => {
     notificationService = new MockNotificationService();
     eventPublisher = new MockEventPublisher();
 
-    service = new EnrollmentApplicationService(
+    commandHandler = new RequestEnrollmentCommandHandler(
       enrollmentRepo,
       studentRepo,
       courseRepo,
       notificationService,
       eventPublisher
+    );
+
+    queryHandler = new GetEnrollmentQueryHandler(
+      enrollmentRepo
     );
 
     // 基本的なテストデータセットアップ
@@ -107,7 +114,7 @@ describe('履修管理システム統合テスト', () => {
 
       // 全ての申請を処理
       for (const command of commands) {
-        const result = await service.requestEnrollment(command);
+        const result = await commandHandler.handle(command);
         expect(result.success).toBe(true);
       }
 
@@ -149,14 +156,19 @@ describe('履修管理システム統合テスト', () => {
       ];
 
       for (const command of commands) {
-        const result = await service.requestEnrollment(command);
+        const result = await commandHandler.handle(command);
         expect(result.success).toBe(true);
       }
 
       // ST001の履修申請を確認
-      const cs101Spring = await service.getEnrollment('ST001', 'CS101', '2025-spring');
-      const cs201Spring = await service.getEnrollment('ST001', 'CS201', '2025-spring');
-      const cs101Fall = await service.getEnrollment('ST001', 'CS101', '2025-fall');
+      const cs101SpringQuery: GetEnrollmentQuery = { studentId: 'ST001', courseId: 'CS101', semester: '2025-spring' };
+      const cs101Spring = await queryHandler.handle(cs101SpringQuery);
+      
+      const cs201SpringQuery: GetEnrollmentQuery = { studentId: 'ST001', courseId: 'CS201', semester: '2025-spring' };
+      const cs201Spring = await queryHandler.handle(cs201SpringQuery);
+      
+      const cs101FallQuery: GetEnrollmentQuery = { studentId: 'ST001', courseId: 'CS101', semester: '2025-fall' };
+      const cs101Fall = await queryHandler.handle(cs101FallQuery);
 
       expect(cs101Spring.success).toBe(true);
       expect(cs201Spring.success).toBe(true);
@@ -176,7 +188,7 @@ describe('履修管理システム統合テスト', () => {
         semester: '2025-spring'
       };
 
-      const result = await service.requestEnrollment(command);
+      const result = await commandHandler.handle(command);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -205,7 +217,7 @@ describe('履修管理システム統合テスト', () => {
       ];
 
       // 1人目は成功
-      const firstResult = await service.requestEnrollment(commands[0]);
+      const firstResult = await commandHandler.handle(commands[0]);
       expect(firstResult.success).toBe(true);
 
       // 定員更新をシミュレート（本来はDBトリガーや別の仕組みで）
@@ -219,7 +231,7 @@ describe('履修管理システム統合テスト', () => {
       ]);
 
       // 2人目は失敗
-      const secondResult = await service.requestEnrollment(commands[1]);
+      const secondResult = await commandHandler.handle(commands[1]);
       expect(secondResult.success).toBe(false);
       if (!secondResult.success) {
         expect(secondResult.error.code).toBe('COURSE_CAPACITY_EXCEEDED');
@@ -238,11 +250,11 @@ describe('履修管理システム統合テスト', () => {
       };
 
       // 1回目は成功
-      const firstResult = await service.requestEnrollment(command);
+      const firstResult = await commandHandler.handle(command);
       expect(firstResult.success).toBe(true);
 
       // 2回目は失敗
-      const secondResult = await service.requestEnrollment(command);
+      const secondResult = await commandHandler.handle(command);
       expect(secondResult.success).toBe(false);
       if (!secondResult.success) {
         expect(secondResult.error.code).toBe('DUPLICATE_ENROLLMENT');
@@ -260,7 +272,7 @@ describe('履修管理システム統合テスト', () => {
         semester: '2025-spring'
       };
 
-      const result = await service.requestEnrollment(command);
+      const result = await commandHandler.handle(command);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -300,7 +312,7 @@ describe('履修管理システム統合テスト', () => {
       let failureCount = 0;
 
       for (const command of commands) {
-        const result = await service.requestEnrollment(command);
+        const result = await commandHandler.handle(command);
         if (result.success) {
           successCount++;
         } else {
@@ -325,7 +337,7 @@ describe('履修管理システム統合テスト', () => {
       ];
 
       for (const command of commands) {
-        await service.requestEnrollment(command);
+        await commandHandler.handle(command);
       }
 
       // 保存されたデータとイベントの整合性チェック
@@ -369,7 +381,7 @@ describe('履修管理システム統合テスト', () => {
       ];
 
       for (const command of commands) {
-        await service.requestEnrollment(command);
+        await commandHandler.handle(command);
       }
 
       // 同じコリレーションIDのイベントを追跡
@@ -390,7 +402,7 @@ describe('履修管理システム統合テスト', () => {
         semester: '2025-spring'
       };
 
-      await service.requestEnrollment(command);
+      await commandHandler.handle(command);
 
       // イベントと通知の内容が一致することを確認
       const events = eventPublisher.getAllEvents();

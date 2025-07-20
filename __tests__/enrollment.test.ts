@@ -1,11 +1,11 @@
 import { describe, test, expect } from 'vitest';
-import { requestEnrollment } from '../src/domain/enrollment-aggregate.js';
+import { requestEnrollment } from '../src/contexts/enrollment/domain/aggregates/enrollment-aggregate';
 import {
   processMultipleEnrollments,
   requestEnrollmentWithFallback,
   conditionalEnrollmentProcessing,
   requestEnrollmentWithRetry
-} from '../src/domain/functional-utils.js';
+} from '../src/contexts/enrollment/domain/services/functional-utils';
 
 describe('履修申請 (Result型版)', () => {
   test('履修を申請できる', () => {

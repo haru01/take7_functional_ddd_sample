@@ -3,9 +3,9 @@ import {
   InMemoryEnrollmentRepository,
   MockStudentRepository,
   MockCourseRepository
-} from '../../src/infrastructure/repositories/enrollment-repository.js';
-import { createEnrollmentRequestedEvent } from '../../src/domain/domain-events.js';
-import { requestEnrollment } from '../../src/domain/enrollment-aggregate.js';
+} from '../../src/contexts/enrollment/infrastructure/repositories/enrollment-repository';
+import { createEnrollmentRequestedEvent } from '../../src/contexts/enrollment/domain/events/domain-events';
+import { requestEnrollment } from '../../src/contexts/enrollment/domain/aggregates/enrollment-aggregate';
 
 describe('InMemoryEnrollmentRepository', () => {
   let repository: InMemoryEnrollmentRepository;

@@ -1,18 +1,21 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { EnrollmentApplicationService } from '../../src/application/enrollment-service.js';
-import type { RequestEnrollmentCommand } from '../../src/application/dtos.js';
+import { RequestEnrollmentCommandHandler } from '../../src/contexts/enrollment/application/commands/index';
+import { GetEnrollmentQueryHandler } from '../../src/contexts/enrollment/application/queries/index';
+import type { RequestEnrollmentCommand } from '../../src/contexts/enrollment/application/commands/index';
+import type { GetEnrollmentQuery } from '../../src/contexts/enrollment/application/queries/index';
 import {
   InMemoryEnrollmentRepository,
   MockStudentRepository,
   MockCourseRepository
-} from '../../src/infrastructure/repositories/enrollment-repository.js';
+} from '../../src/contexts/enrollment/infrastructure/repositories/enrollment-repository';
 import {
   MockNotificationService,
   MockEventPublisher
-} from '../../src/infrastructure/services/mock-services.js';
+} from '../../src/contexts/enrollment/infrastructure/adapters/services/mock-services';
 
-describe('履修申請アプリケーションサービス', () => {
-  let service: EnrollmentApplicationService;
+describe('履修申請CQRS Handler', () => {
+  let commandHandler: RequestEnrollmentCommandHandler;
+  let queryHandler: GetEnrollmentQueryHandler;
   let enrollmentRepo: InMemoryEnrollmentRepository;
   let studentRepo: MockStudentRepository;
   let courseRepo: MockCourseRepository;
@@ -26,12 +29,16 @@ describe('履修申請アプリケーションサービス', () => {
     notificationService = new MockNotificationService();
     eventPublisher = new MockEventPublisher();
 
-    service = new EnrollmentApplicationService(
+    commandHandler = new RequestEnrollmentCommandHandler(
       enrollmentRepo,
       studentRepo,
       courseRepo,
       notificationService,
       eventPublisher
+    );
+
+    queryHandler = new GetEnrollmentQueryHandler(
+      enrollmentRepo
     );
 
     // デフォルトのテストデータ設定
@@ -54,7 +61,7 @@ describe('履修申請アプリケーションサービス', () => {
         semester: '2025-spring'
       };
 
-      const result = await service.requestEnrollment(command);
+      const result = await commandHandler.handle(command);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -90,7 +97,7 @@ describe('履修申請アプリケーションサービス', () => {
         correlationId: '123e4567-e89b-12d3-a456-426614174000'
       };
 
-      const result = await service.requestEnrollment(command);
+      const result = await commandHandler.handle(command);
 
       expect(result.success).toBe(true);
       
@@ -107,7 +114,7 @@ describe('履修申請アプリケーションサービス', () => {
           semester: '2025-spring'
         } as RequestEnrollmentCommand;
 
-        const result = await service.requestEnrollment(invalidCommand);
+        const result = await commandHandler.handle(invalidCommand);
 
         expect(result.success).toBe(false);
         if (!result.success) {
@@ -126,7 +133,7 @@ describe('履修申請アプリケーションサービス', () => {
           semester: '2025-spring'
         };
 
-        const result = await service.requestEnrollment(command);
+        const result = await commandHandler.handle(command);
 
         expect(result.success).toBe(false);
         if (!result.success) {
@@ -143,7 +150,7 @@ describe('履修申請アプリケーションサービス', () => {
           semester: '2025-spring'
         };
 
-        const result = await service.requestEnrollment(command);
+        const result = await commandHandler.handle(command);
 
         expect(result.success).toBe(false);
         if (!result.success) {
@@ -160,7 +167,7 @@ describe('履修申請アプリケーションサービス', () => {
           semester: '2025-spring'
         };
 
-        const result = await service.requestEnrollment(command);
+        const result = await commandHandler.handle(command);
 
         expect(result.success).toBe(false);
         if (!result.success) {
@@ -184,7 +191,7 @@ describe('履修申請アプリケーションサービス', () => {
           semester: '2025-spring'
         };
 
-        const result = await service.requestEnrollment(command);
+        const result = await commandHandler.handle(command);
 
         expect(result.success).toBe(false);
         if (!result.success) {
@@ -208,7 +215,7 @@ describe('履修申請アプリケーションサービス', () => {
           semester: '2025-spring'
         };
 
-        const result = await service.requestEnrollment(command);
+        const result = await commandHandler.handle(command);
 
         expect(result.success).toBe(false);
         if (!result.success) {
@@ -226,11 +233,11 @@ describe('履修申請アプリケーションサービス', () => {
           semester: '2025-spring'
         };
 
-        const firstResult = await service.requestEnrollment(command);
+        const firstResult = await commandHandler.handle(command);
         expect(firstResult.success).toBe(true);
 
         // 同じ申請を再実行
-        const secondResult = await service.requestEnrollment(command);
+        const secondResult = await commandHandler.handle(command);
         expect(secondResult.success).toBe(false);
         if (!secondResult.success) {
           expect(secondResult.error.code).toBe('DUPLICATE_ENROLLMENT');
@@ -247,9 +254,10 @@ describe('履修申請アプリケーションサービス', () => {
         courseId: 'CS101',
         semester: '2025-spring'
       };
-      await service.requestEnrollment(command);
+      await commandHandler.handle(command);
 
-      const result = await service.getEnrollment('ST001', 'CS101', '2025-spring');
+      const query: GetEnrollmentQuery = { studentId: 'ST001', courseId: 'CS101', semester: '2025-spring' };
+      const result = await queryHandler.handle(query);
 
       expect(result.success).toBe(true);
       if (result.success && result.data) {
@@ -261,7 +269,8 @@ describe('履修申請アプリケーションサービス', () => {
     });
 
     test('存在しない履修申請の取得', async () => {
-      const result = await service.getEnrollment('ST999', 'CS999', '2025-spring');
+      const query: GetEnrollmentQuery = { studentId: 'ST999', courseId: 'CS999', semester: '2025-spring' };
+      const result = await queryHandler.handle(query);
 
       expect(result.success).toBe(true);
       if (result.success) {
@@ -278,7 +287,7 @@ describe('履修申請アプリケーションサービス', () => {
         semester: '2025-spring'
       };
 
-      await service.requestEnrollment(command);
+      await commandHandler.handle(command);
 
       const events = eventPublisher.getAllEvents();
       expect(events).toHaveLength(1);
@@ -294,7 +303,7 @@ describe('履修申請アプリケーションサービス', () => {
         semester: '2025-spring'
       };
 
-      await service.requestEnrollment(command);
+      await commandHandler.handle(command);
 
       const notifications = notificationService.getSentNotifications();
       expect(notifications).toHaveLength(1);
@@ -310,7 +319,7 @@ describe('履修申請アプリケーションサービス', () => {
         semester: '2025-spring'
       };
 
-      await service.requestEnrollment(command);
+      await commandHandler.handle(command);
 
       expect(enrollmentRepo.getEnrollmentCount()).toBe(0);
       expect(eventPublisher.getAllEvents()).toHaveLength(0);
